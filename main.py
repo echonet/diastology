@@ -16,12 +16,6 @@ warnings.filterwarnings('ignore')
 from utils import ase_guidelines,dicom_utils,model_utils,lav_mask
 
 
-'''
-    TO DO: 
-        3. Comment code
-        4. Add flag for saving images 
-'''
-
 diastology_views = [
     'A4C','A4C_LV','A2C', # EF, LAVi 
     'Doppler_A4C_MV_PW', # MV E and MV E/A 
