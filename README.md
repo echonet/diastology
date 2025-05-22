@@ -14,6 +14,9 @@ This repository presents a workflow of 8 different EchoNet deep learning models 
    - Lateral e' velocity
    - Mitral E/A
 4. Evaluates left ventricular diastolic function according to 2016 ASE guidelines
+5. Saves results to file:
+   - .csv with filenames, their corresponding deep learning echo parameter, and the final diastology grade
+   - Doppler echoes with predicted annotation point and deep learning value
 
 <p align='center'>
   <img width="900" alt="schematic_of_diastology_pipeline" src="https://github.com/user-attachments/assets/bea1ae52-a034-427e-a902-4635118d0295"/>
@@ -35,7 +38,18 @@ This repository presents a workflow of 8 different EchoNet deep learning models 
 
 4. Run inference to analyze diastology
    ```
-   python main.py --path <path to echo study>
+   python main.py --path <path to echo study> --quality_threshold <minimum echo quality> --to_save <flag to save results> --save_path <directory where results will be saved>
    ```
+   The script takes in the following arguments:
+   1. --path - path to directory with the echo files; required parameter
+   2. --quality_threshold - minimum threshold for echo quality, where the default is 0; optional parameter
+   3. --to_save - True or False to indicate whether results should be saved, where the default is True; optional parameter
+   4. --save_path - path to directory for saving pipeline results, where the default saves results to the input directory; optional parameter
+  
+
+
+
+
+
 
 
