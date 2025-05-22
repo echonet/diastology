@@ -12,10 +12,10 @@ from utils import lav_mask
 from utils.constants import *
 
 DOPPLER_WEIGHTS_DICT = {
-    'medevel':"/workspace/vic/diastology/weights/doppler/medevel_mae_1_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/medevel_weights.ckpt
-    'latevel':"/workspace/vic/diastology/weights/doppler/latevel_mae_1_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/latevel_weights.ckpt
-    'trvmax':"/workspace/vic/diastology/weights/doppler/trvmax_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/trvmax_weights.ckpt
-    'eovera':"/workspace/vic/diastology/weights/doppler/mvpeak_2c_weights.ckpt" # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/mvpeak_2c_weights.ckpt
+    'medevel':"<path to weights>", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/medevel_weights.ckpt
+    'latevel':"<path to weights>", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/latevel_weights.ckpt
+    'trvmax':"<path to weights>", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/trvmax_weights.ckpt
+    'eovera':"<path to weights>" # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/mvpeak_2c_weights.ckpt
 }
 
 ALL_VIEWS = [
@@ -119,7 +119,7 @@ ALL_VIEWS = [
 '''
     EchoNet-Dynamic LVEF Model and Inference
 '''
-def ef_regressor(weights_path='/workspace/vic/diastology/weights/lvef/best.pt'):
+def ef_regressor(weights_path='<path to weights>'):
     device = torch.device("cuda:0")
     model = torchvision.models.video.__dict__["r2plus1d_18"](pretrained=True)
     model.fc = torch.nn.Linear(model.fc.in_features,1)
@@ -137,7 +137,7 @@ def predict_lvef(x,ef_model,ef_checkpoint,dims=(112,112)):
     std = ef_checkpoint['std'].reshape(3,1,1,1)
     resize = torchvision.transforms.Resize(dims)
     x_resize = resize(x)
-    x_resize = x_resize.transpose(1,0,2,3) # Change from F,C,H,W to C,F,H,W
+    x_resize = x_resize.permute(1,0,2,3) # Change from F,C,H,W to C,F,H,W
     x_resize -= mean
     x_resize /= std
     c,f,h,w = x_resize.shape
@@ -149,7 +149,7 @@ def predict_lvef(x,ef_model,ef_checkpoint,dims=(112,112)):
 '''
     Left Atrial Segmentation Model and Inference
 '''
-def load_la_model(device='cuda:0',weights_path='/workspace/vic/diastology/weights/lav/weights.pt'):
+def load_la_model(device='cuda:0',weights_path='<path to weights>'):
     model = torchvision.models.segmentation.__dict__['deeplabv3_resnet50']()
     model.classifier[-1] = torch.nn.Conv2d(
         model.classifier[-1].in_channels,
@@ -219,7 +219,7 @@ def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
 '''
     View Classification Model and Inference
 '''
-def load_view_classifier(weights_path='/workspace/vic/diastology/weights/view/epoch=21-step=17842.ckpt'):
+def load_view_classifier(weights_path='<path to weights>'):
     device=torch.device("cuda")
     vc_checkpoint = torch.load(weights_path)
     vc_state_dict={key[6:]:value for key,value in vc_checkpoint['state_dict'].items()}
@@ -259,29 +259,33 @@ def view_inference(view_input,view_classifier,filename,batch_size=512):
 '''
     Quality Control Model and Inference
 '''
-def load_quality_classifier(weights_path='/workspace/vic/diastology/weights/quality/quality.pt'):
+def load_quality_classifier(weights_path='<path to weights>',
+                            device=torch.device('cuda')):
     model = densenet121(num_classes=1)
-    weights = torch.load(weights_path)
+    weights = torch.load(weights_path,map_location=device)
     ### TO-DO: Double check that this is right for densenet
-    weights = {key[2:]:val for key,val in weights.items()}
+    # weights = {key[2:]:val for key,val in weights.items()}
+    weights = {key.replace('m.','',1):val for key,val in weights.items()}
     model.load_state_dict(weights)
+    model.to(device)
     return model.eval()
 
-def quality_inference(quality_input,quality_model,batch_size=512):
+def quality_inference(quality_input,quality_model,filename,batch_size=512):
     quality_labels = torch.zeros(len(quality_input))
     quality_ds = torch.utils.data.TensorDataset(quality_input,quality_labels)
     quality_dl = torch.utils.data.DataLoader(quality_ds,batch_size=batch_size,num_workers=1,shuffle=False)
     next(iter(quality_dl))
     device = torch.device("cuda")
-    yhat = torch.zeros(len(quality_ds))
+    yhat = np.zeros(len(quality_ds))
     with torch.no_grad():
         for idx,(image,label) in tqdm.tqdm(enumerate(quality_dl)):
             image = image.to(device)
             preds = quality_model(image)
             start = idx * batch_size
             end = min((idx + 1) * batch_size, len(quality_ds))
-            yhat[start:end] = F.sigmoid(preds).cpu().numpy()
-    predicted_quality = {key:val for (key,val) in zip(list(quality_ds.keys()),yhat)}
+            activated = F.sigmoid(preds).squeeze().cpu().numpy()
+            yhat[start:end] = F.sigmoid(preds).squeeze().cpu().numpy()
+    predicted_quality = {key:val for (key,val) in zip(filename,yhat)}
     return predicted_quality
 
 '''
@@ -305,7 +309,7 @@ def load_doppler_model(parameter):
 def doppler_inference(dicom_path,parameter):
     device = 'cuda:0'
     ds = pydicom.dcmread(dicom_path)
-    input_image = change_dicom_color(ds) #ds.pixel_array
+    input_image = change_dicom_color(dicom_path) #ds.pixel_array
     x0,x1,y0,y1,conversion_factor = get_doppler_region(ds)
     horizontal_y = find_horizontal_line(ds.pixel_array[y0:y1, :])
     #Basically, the region where the Doppler signal starts is 342-345. We truncate the image from 342 to 768. Make 426*1024.

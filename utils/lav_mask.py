@@ -1,7 +1,7 @@
 import numpy as np
 import skimage
 from scipy.interpolate import splev, splprep
-from skimage import filters, measure
+from skimage import filters,measure
 from skimage.restoration import denoise_bilateral
 from sklearn.linear_model import LinearRegression
 
@@ -74,7 +74,7 @@ def find_axes(contour,m_mitral,m_perpend,pm,la_end,la_end2=None,n_discs=21):
             la_length = length2 
     h = la_length/n_discs
     for i in range(1,n_discs):
-        ##   get disc center: 
+        ## get disc center: 
         disc_y = pm[1] + h * i # Traverse line from midpoint of mitral plane to end of LA by disc height h 
         disc_x = (h*i / m_perpend) + pm[0] # Solve for x using line equation dy = m*(x_1 - x_0)
         if disc_y > la_end[1]: 
@@ -95,7 +95,6 @@ def find_axes(contour,m_mitral,m_perpend,pm,la_end,la_end2=None,n_discs=21):
 
 def calc_mod_volume(h,a4c_axes,a2c_axes=None): 
     h_cm = h*H_PIX
-    print('Disc height (cm): ',h,h_cm)
     a4c_axes_cm = W_PIX*a4c_axes
     if a2c_axes is not None: 
         a2c_axes_cm = W_PIX*a2c_axes

@@ -231,5 +231,6 @@ def plot_results(m_name,filepath,peak_velocity,pred_x0,pred_y0,save_dir,pred_x1=
     if (pred_x1) and (pred_y1):
         plt.scatter(pred_x1,pred_y1,color='tomato')
     plt.title(f'{m_name}: {peak_velocity}')
-    save_path = Path(save_dir/f'{filepath.stem}.png')
+    save_path = Path(save_dir/f'{filepath.name}.png')
     plt.savefig(save_path,bbox_inches='tight',format='png')
+    plt.close()
