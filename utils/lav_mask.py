@@ -104,52 +104,19 @@ def calc_mod_volume(h,a4c_axes,a2c_axes=None):
         volume = sum([np.pi*(a/2.)**2*h_cm for a in a4c_axes_cm])
     return volume
 
-###----- FUNKCJE POMOCNICZE
+### --- HELPER FUNCTIONS FOR LA SEGMENTATION --- ###
 def check_and_shift_edge(points, p1, p2):
     """
-    Sprawdza i przesuwa krawędź pomiędzy dwoma punktami w konturze, tak aby punkty były uporządkowane.
-    Jeżeli punkty P1 i P2 znajdują się na końcach konturu, nie dokonuje żadnych zmian.
-
-    Parameters:
-        points (np.ndarray): Zbiór punktów konturu.
-        p1 (np.ndarray): Punkt P1 na konturze.
-        p2 (np.ndarray): Punkt P2 na konturze.
-
-    Returns:
-        np.ndarray: Zaktualizowany zbiór punktów konturu.
+    Returns an array of ordered coordinates from points P1
+    to P2 of the mitral plane
     """
-    # Znalezienie indeksów punktów P1 i P2
-    idx_p1 = np.where(np.all(points == p1, axis=1))[0][0]
-    idx_p2 = np.where(np.all(points == p2, axis=1))[0][0]
-
-    min_idx = np.min([idx_p1, idx_p2])
-    max_idx = np.max([idx_p1, idx_p2])
-
-    # Sprawdzamy, który punkt ma mniejszy indeks
-    if (max_idx > 1) & (min_idx == 0):
-        points_new = points
-    else:
-        points_new = np.roll(
-            points, -(min_idx + 1), axis=0
-        )  # Przesuwamy punkty tak, aby P1 i P2 były w odpowiedniej kolejności
 
     return points_new
 
 
 def find_mitral_plane(points):
     """
-    Znajduje punkty tworzące mitral plane (najdłuższą linię w wielokącie).
-    Mitral plane to linia łącząca dwa punkty konturu o największej odległości.
-
-    Parameters:
-        points (np.ndarray): Zbiór punktów tworzących kontur wielokąta.
-
-    Returns:
-        tuple:
-            - P1 (np.ndarray): Pierwszy punkt mitral plane.
-            - P2 (np.ndarray): Drugi punkt mitral plane.
-            - mitral_idx (int): Indeks punktu o największej odległości.
-            - max_distance (float): Największa odległość pomiędzy punktami.
+    Returns array of coordinates making up the mitral plane
     """
     # Obliczanie odległości pomiędzy kolejnymi punktami
     distances = np.sqrt(np.sum(np.diff(points, axis=0, append=points[:1]) ** 2, axis=1))
@@ -166,39 +133,14 @@ def find_mitral_plane(points):
 
 def smooth_polygon(points, smoothness=0.5, num_points=1000):
     """
-    Wygładza wielokąt za pomocą splina, nie usuwając żadnych punktów.
-    Tworzy krzywą, która przechodzi przez wszystkie punkty wielokąta.
-
-    Parameters:
-        points (np.ndarray): Punkty tworzące kontur wielokąta.
-        smoothness (float): Stopień wygładzenia (parametr s dla splprep).
-        num_points (int): Liczba wygenerowanych punktów na krzywej.
-
-    Returns:
-        np.ndarray: Wygładzone punkty na krzywej.
+    Returns array of coordinates of smoothed polygon
     """
-    # Tworzymy splina dla wszystkich punktów
-    tck, _ = splprep([points[:, 0], points[:, 1]], s=smoothness)
-
-    # Generowanie punktów na krzywej splina
-    u_new = np.linspace(0, 1, num_points)
-    x_new, y_new = splev(u_new, tck)
-
-    # Łączenie wygładzonych punktów w jeden zbiór
-    smooth_points = np.column_stack([x_new, y_new])
-
     return smooth_points
 
 
 def point_of_bottom(points):
     """
-    Znajduje punkt konturu o największej wartości współrzędnej 'y'.
-
-    Parameters:
-        points (np.ndarray): Zbiór punktów konturu w formacie (x, y).
-
-    Returns:
-        np.ndarray: Punkt konturu o największej wartości 'y'.
+    Returns array of coordinates with largest y value 
     """
     # Znalezienie punktu o największej wartości 'y'
     index_of_bottom = np.argmax(points[:, 1])
@@ -209,14 +151,8 @@ def point_of_bottom(points):
 
 def rasterize_polygon(smooth_points, img_shape):
     """
-    Rasteryzacja wielokąta: generowanie maski binarnej na podstawie współrzędnych punktów konturu.
-
-    Parameters:
-        smooth_points (np.ndarray): Współrzędne punktów konturu.
-        img_shape (tuple): Wymiary obrazu (wysokość, szerokość).
-
-    Returns:
-        np.ndarray: Maska binarna przedstawiająca rasteryzowany wielokąt.
+    Returns array of coordinates in the binary mask
+    for a rasterized polygon
     """
     # Generowanie indeksów punktów w obrazie
     r, c = skimage.draw.polygon(
@@ -234,51 +170,13 @@ def rasterize_polygon(smooth_points, img_shape):
 
 def vector_to_bitmap(example, mask_size, smooth=True):
     """
-    Przekształca wektor punktów do bitmapy. Działa na bazie kilku etapów:
-    wyznaczania mitral plane, przesuwania krawędzi, wygładzania punktów,
-    znajdowania punktu na dole oraz rasteryzacji.
-
-    Parameters:
-        mask_size (tuple):(h, w) Wymiary bitmapy maski.
-        example (np.ndarray): Punkty konturu.
-        smooth (bool): Jeśli True, wygładza kontur.
-
-    Returns:
-        tuple:
-            - P1 (np.ndarray): Punkt P1 mitral plane.
-            - P2 (np.ndarray): Punkt P2 mitral plane.
-            - point_bottom (np.ndarray): Punkt o największej wartości 'y'.
-            - points (np.ndarray): Oryginalne punkty konturu.
-            - smooth_points (np.ndarray): Wygładzone punkty konturu.
-            - mask (np.ndarray): Maska binarna.
+    Converts a vector of points to a bitmap by: 
+    - Determinining the mitral plane with poitns P1 and P2
+    - Moving edges 
+    - Smoothing points
+    - Finding the vertical endpoint of the left atrium 
+    - Rasterizing
     """
-    # Wczytanie danych
-    points_pure = example
-
-    # Znalezienie mitral plane
-    P1, P2, mitral_idx, mitral_plane_distance = find_mitral_plane(points_pure)
-    mitral_plane = [P1, P2]
-
-    # Sprawdzenie i przesunięcie krawędzi pomiędzy punktami mitral plane
-    points = check_and_shift_edge(points_pure, P1, P2)
-
-    # Wygładzanie punktów, jeśli smooth=True
-    if smooth:
-        smooth_points = smooth_polygon(points)
-    else:
-        smooth_points = points
-
-    # Punkt na dole (największa wartość 'y')
-    point_bottom = point_of_bottom(smooth_points)
-
-    # Środek odcinka P1-P2
-    mid_point = (P1 + P2) / 2
-
-    # Odległość od środka do point_bottom
-    vertical_distance = np.linalg.norm(mid_point - point_bottom)
-
-    # Rasteryzacja wielokąta
-    mask = rasterize_polygon(smooth_points, mask_size)
 
     return (
         P1,
@@ -294,153 +192,34 @@ def vector_to_bitmap(example, mask_size, smooth=True):
 
 def find_contour(mask):
     """
-    Wyznacza kontur maski binarnej na podstawie wygładzonego obrazu. Przechodzi przez maskę, wygładza ją,
-    a następnie znajduje kontury, przekształcając je do formatu punktów (x, y).
-
-    Parameters:
-        mask (np.ndarray): Maska binarna, na której wyznaczany jest kontur.
-
-    Returns:
-        tuple:
-            - median_smoothed_image (np.ndarray): Obraz po wygładzeniu i denoisingu.
-            - point_mask (np.ndarray): Punkty konturu w formacie (x, y).
+    This function constructs a binary mask from a smoothed image
     """
-    # Wygładzanie maski binarnej
-    smooth_binary_array = filters.gaussian(mask, sigma=1)
-
-    # Denoisowanie obrazu
-    median_smoothed_image = denoise_bilateral(
-        smooth_binary_array, sigma_color=0.00005, sigma_spatial=50
-    )
-
-    # Znajdowanie konturów
-    contours = measure.find_contours(median_smoothed_image, level=0.3)
-
-    # Wybór pierwszego konturu
-    chosen_contour = contours[0]
-
-    # Przekształcenie konturu na listę punktów (x, y)
-    contour_points = chosen_contour.tolist()
-    contour_points_swapped = [(x, y) for y, x in contour_points]
-
-    # Konwersja na tablicę NumPy
-    contour_array = np.array(contour_points_swapped)
-
-    # Usuwanie zduplikowanych punktów
-    _, unique_indices = np.unique(contour_array, axis=0, return_index=True)
-    point_mask = contour_array[np.sort(unique_indices)]
-
     return median_smoothed_image, point_mask
 
 
 def min_max_y_point(point_mask):
     """
-    Wyznacza punkty o minimalnej i maksymalnej wartości współrzędnej 'y' w zbiorze punktów konturu.
-
-    Parameters:
-        point_mask (np.ndarray): Zbiór punktów konturu w formacie (x, y).
-
-    Returns:
-        tuple:
-            - P1_mask (np.ndarray): Punkty o minimalnej wartości 'y'.
-            - point_bottom_mask (np.ndarray): Punkty o maksymalnej wartości 'y'.
+    Returns the minimum and maximum y-coordinates for a 
+    set of contour points
     """
-    # Znalezienie minimalnej i maksymalnej wartości 'y'
-    min_y, max_y = np.min(point_mask[:, 1]), np.max(point_mask[:, 1])
-
-    # Wybranie punktów o minimalnej i maksymalnej wartości 'y'
-    P1_mask = point_mask[point_mask[:, 1] == min_y]
-    point_bottom_mask = point_mask[point_mask[:, 1] == max_y]
 
     return P1_mask, point_bottom_mask
 
 
 def P2_LinearRegression_method(P1_mask, point_mask):
     """
-    Przeprowadza regresję liniową na wybranym zbiorze punktów konturu, aby znaleźć punkt P2.
-    Punkt P2 jest wyznaczany na podstawie dopasowanej linii oraz punktu P1, który jest punktem wymuszonym.
-
-    Parameters:
-        P1_mask (np.ndarray): Punkt wymuszony (P1) na konturze.
-        point_mask (np.ndarray): Zbiór punktów konturu w formacie (x, y).
-
-    Returns:
-        tuple:
-            - reg (LinearRegression): Dopasowany model regresji liniowej.
-            - P2_mask (np.ndarray): Wybrany punkt P2 na konturze.
-            - P1_mask (np.ndarray): Punkt P1 (wybrany punkt w procesie regresji).
+    Given point P1 of the mitral plane, this function performs
+    linear regression to return point P2
     """
-    # Wybór wymuszonego punktu (P1)
-    forced_point = P1_mask.ravel()
-
-    # Znalezienie najbliższego punktu w zbiorze
-    forced_index = np.argmin(np.abs(np.sum(point_mask - forced_point, axis=1)))
-
-    # Wybór punktów przed i po wymuszonym punkcie
-    filter_range = 10
-    left_selected = point_mask[max(0, forced_index - filter_range) : forced_index]
-    right_selected = point_mask[forced_index + 1 : forced_index + 1 + filter_range]
-
-    # Obliczanie różnicy w 'y' dla punktów po lewej stronie
-    y_diff_left = np.abs(np.diff(left_selected[:, 1], append=left_selected[0, 1]))
-
-    # Obliczanie różnicy w 'y' dla punktów po prawej stronie
-    y_diff_right = np.abs(np.diff(right_selected[:, 1], append=right_selected[0, 1]))
-
-    # Wybór strony z najmniejszym całkowitym spadkiem
-    total_y_diff_left = np.sum(y_diff_left)
-    total_y_diff_right = np.sum(y_diff_right)
-
-    if total_y_diff_left <= total_y_diff_right:
-        selected_points = left_selected
-    else:
-        selected_points = right_selected
-
-    # Dopasowanie regresji liniowej
-    X = selected_points[:, 0].reshape(-1, 1)
-    y = selected_points[:, 1]
-    reg = LinearRegression()
-    reg.fit(X, y)
-
-    # Przewidywanie wartości y dla punktów
-    predicted_y = reg.predict(point_mask[:, 0].reshape(-1, 1))
-    differences = np.abs(point_mask[:, 1] - predicted_y)
-
-    # Ustalenie progu dla najmniejszych różnic
-    threshold = np.percentile(differences, 21)
-    strongly_correlated_points = point_mask[differences <= threshold]
-
-    # Wybranie punktu P2
-    P2_mask = strongly_correlated_points[np.argmin(strongly_correlated_points[:, 0])]
-
-    # Wybranie punktu P1
-    P1_mask_new = strongly_correlated_points[
-        np.argmax(strongly_correlated_points[:, 0])
-    ]
-
+    
     return reg, P2_mask, P1_mask_new
 
 
 def delete_point_between_P1_P2(P1_mask, P2_mask, point_mask):
     """
-    Usuwa punkty pomiędzy dwoma wybranymi punktami P1 i P2 w konturze, zachowując tylko punkty na skrajach.
-
-    Parameters:
-        P1_mask (np.ndarray): Punkt P1 w zbiorze punktów.
-        P2_mask (np.ndarray): Punkt P2 w zbiorze punktów.
-
-    Returns:
-        np.ndarray: Zbiór punktów konturu po usunięciu punktów pomiędzy P1 i P2.
+    This function removes points between points P1 and P2 of the mitral plane
+    to isolate the endpoints
     """
-    # Znalezienie indeksów punktów P1 i P2
-    idx_p1 = np.where(np.all(point_mask == P1_mask, axis=1))[0][0]
-    idx_p2 = np.where(np.all(point_mask == P2_mask, axis=1))[0][0]
-
-    # Określenie zakresu punktów do usunięcia
-    start_index, end_index = sorted([idx_p2, idx_p1])
-
-    # Usunięcie punktów pomiędzy P1 i P2
-    filtered_points = np.delete(point_mask, np.s_[start_index + 2 : end_index], axis=0)
 
     return filtered_points
 
@@ -452,52 +231,12 @@ def delete_point_between_P1_P2(P1_mask, P2_mask, point_mask):
 
 def process_mask_to_points(mask):
     """
-    Procesuje maskę binarną, analizując jej kontur oraz kluczowe punkty:
-    - Wyznaczanie konturu maski.
-    - Znalezienie punktów P1 i P2 (definiujących mitral plane).
-    - Dopasowanie regresji liniowej do punktów konturu.
-    - Usunięcie punktów pomiędzy P1 a P2.
-    - Wyznaczenie punktu na dole (point_bottom).
-    - Obliczenie odległości mitral plane oraz odległości pionowej od środka do punktu na dole.
-    - Wygładzenie konturu i rasteryzacja maski.
-
-    Parameters:
-        mask (np.ndarray): Maska binarna reprezentująca obiekt do analizy.
-
-    Returns:
-        tuple: Zawiera wyniki analizy maski:
-            - mask_2 (np.ndarray): Rasteryzowana i wygładzona wersja maski binarnej.
-            - smooth_points_mask (np.ndarray): Wygładzone punkty konturu.
-            - P1_mask (tuple): Punkt początkowy mitral plane.
-            - P2_mask (tuple): Punkt końcowy mitral plane.
-            - point_bottom_mask (tuple): Punkt o największej wartości Y (najniżej położony).
-            - mitral_plane_distance (float): Długość mitral plane.
-            - vertical_distance (float): Odległość pionowa od środka mitral plane do point_bottom.
-            - points_maks_1 (np.ndarray): Filtrowane punkty konturu.
+    This function generates
+    - Point coordinates of the mask
+    - Points 1 and 2 of the mitral plane 
+    - Horizontal length of the mitral plane 
+    - Vertical length of the left atrium 
     """
-    # Wyznaczenie kontura maski
-    median_smoothed_image, point_mask = find_contour(mask)
-
-    # Wyznaczenie punktów P1 i P2
-    P1_mask, point_bottom = min_max_y_point(point_mask)
-
-    # Przeprowadzenie regresji liniowej
-    reg, P2_mask, P1_mask_new = P2_LinearRegression_method(P1_mask[0], point_mask)
-
-    # Usunięcie punktów pomiędzy P1 a P2
-    filtered_points = delete_point_between_P1_P2(P1_mask_new, P2_mask, point_mask)
-
-    # Wyznaczenie z punktów mitral plane, oraz wygładzenie figury
-    (
-        P1_mask,
-        P2_mask,
-        point_bottom_mask,
-        mitral_plane_distance,
-        vertical_distance,
-        points_maks_1,
-        smooth_points_mask,
-        mask_2,
-    ) = vector_to_bitmap(filtered_points, mask_size=mask.shape, smooth=True)
 
     return (
         mask_2,
