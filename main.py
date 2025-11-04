@@ -32,10 +32,13 @@ doppler_names = {
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--path',required=True,type=str,help='Path to directory of study with DICOM files')
+parser.add_argument('--guideline_year',required=True,type=int,help='Please indicate which year of ASE guideline to follow - 2016 vs 2025')
 parser.add_argument('--quality_threshold',required=False,type=float,help='Minimum echo quality')
 parser.add_argument('--to_save',required=False,type=bool,help='Option to save results')
 parser.add_argument('--save_path',required=False,type=str,help='Path for saving diastology results')
+
 args = parser.parse_args()
+ase_year = args.guideline_year
 path = Path(args.path)
 if args.quality_threshold:
     quality_threshold = args.quality_threshold
@@ -284,12 +287,15 @@ else:
         mvEoverA = 0.
         print('MV E/A was not calculated')
 
-    if lvef>=50:
-        grade = ase_guidelines.preserved_ef_dd(medevel,latevel,trvmax,mvE_eprime,lavi) 
-        if grade == 1: 
-            grade = ase_guidelines.reduced_ef_dd(trvmax,mvE_eprime,mvEoverA,mvE,lavi) 
-    else:
-        grade = ase_guidelines.reduced_ef_dd(trvmax,mvE_eprime,mvEoverA,mvE,lavi) 
+    if ase_year==2016:
+        if lvef>=50:
+            grade = ase_guidelines.preserved_ef_dd(medevel,latevel,trvmax,mvE_eprime,lavi) 
+            if grade == 1: 
+                grade = ase_guidelines.reduced_ef_dd(trvmax,mvE_eprime,mvEoverA,mvE,lavi) 
+        else:
+            grade = ase_guidelines.reduced_ef_dd(trvmax,mvE_eprime,mvEoverA,mvE,lavi)
+    elif ase_year==2025:
+        grade = ase_guidelines.ase2025(medevel,latevel,trvmax,lavi,mvEoverA,mvE) 
 
     diastolic_grade = ase_guidelines.map_grade_to_text[grade]
     print(f'Found {diastolic_grade}.')

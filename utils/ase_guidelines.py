@@ -89,3 +89,75 @@ def reduced_ef_dd(trvmax=0,E_evel=0,E_A=0,E=0,lavi=0):
         elif n_subcriteria <= 1: # Insufficient parameters to grade 
             return -1
     return 0
+
+def ase2025(medevel,latevel,trvmax,lavi,eovera,e,
+            pulmsd=1.0,lars=0.2,
+            t_septal_e=6,t_lateral_e=7,t_avg_e=6.5,
+            t_septalEe=15,t_lateralEe=13,t_avg_Ee=14,
+            t_trvmax=280.,
+            t_lavi=34,
+            t_pulmsd=0.67,
+            t_lars=0.18
+            ):
+    abnormal = []
+    if medevel!=100 and latevel!=100:
+        avg_evel = np.mean([medevel,latevel])
+    else:
+        avg_evel = 100
+    if (medevel <= t_septal_e) or (latevel <= t_lateral_e) or (avg_evel <= t_avg_e):
+        abnormal.append('reduced_e')
+        # print('FOUND REDUCED E', medevel,latevel,avg_evel)
+    if e!=0: 
+        if medevel != 100 and latevel != 100:
+            avg_Ee = e/np.mean([medevel,latevel])
+            septal_Ee = e/medevel
+            lateral_Ee = e/latevel
+            if avg_Ee >= t_avg_Ee or septal_Ee >= t_septalEe or lateral_Ee >= t_lateralEe:
+                abnormal.append('increased_Ee')
+        if medevel != 100 and latevel == 100:
+            septal_Ee = e/medevel 
+            if septal_Ee >= t_septalEe: 
+                abnormal.append('increased_Ee')
+        if latevel != 100 and medevel == 100:
+            lateral_Ee = e/latevel 
+            if lateral_Ee >= t_lateralEe: 
+                abnormal.append('increased_Ee')
+    if trvmax >= t_trvmax: 
+        abnormal.append('increased_TR')
+    abnormal = set(abnormal)
+    # print(abnormal)
+    if len(abnormal) == 0:
+        return 0 
+    if len(abnormal) == 3:
+        return 3 
+    if len(abnormal) == 2 or (len(abnormal)==1 and 'increased_Ee' in abnormal) or (len(abnormal)==1 and 'increased_TR' in abnormal): 
+        print(len(abnormal),abnormal)
+        ### If LAVi abnormal 
+        if lavi > t_lavi or pulmsd <= t_pulmsd or lars <= t_lars: 
+            ### Increased LAP, can't grade bc NO E/A
+            if eovera == 0:
+                return 5
+            ### If E/A <2 --> Grade 2 
+            elif eovera < 2: 
+                return 2 
+            ### If E/A >=2 --> Grade 3 
+            elif eovera >= 2:
+                return 3 
+        ### If LAVi normal --> Grade 1
+        elif lavi <= t_lavi: 
+            return 1
+    if len(abnormal) == 1: 
+        if 'reduced_e' in abnormal: 
+            ### Missing E/A so can't grade 
+            if eovera==0.:
+                return 4
+            if eovera <= 0.8: 
+                return 1 
+            elif eovera > 0.8: 
+                if lavi > 34: 
+                    if eovera <2: 
+                        return 2 
+                    elif eovera >= 2:
+                        return 3
+                else:
+                    return 1
