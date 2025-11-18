@@ -64,6 +64,7 @@ else:
     files = [f for f in path.iterdir() if f.is_file()]
     dataset = {}
     image_dataset = {}
+    video_dataset = {}
     bsa = 0.
     for f in files:
         # filename = f.stem
@@ -74,6 +75,7 @@ else:
         if len(pixels.shape)==4 and pixels.shape[0]>1: 
             x = dicom_utils.convert_video_dicom(pixels)
             x_first_frame = dicom_utils.pull_first_frame(x)
+            video_dataset[f] = x 
             image_dataset[f] = x_first_frame
         else:
             x = dicom_utils.convert_image_dicom(pixels)
@@ -99,17 +101,38 @@ else:
     for f in to_remove:
         dataset.pop(f)
         image_dataset.pop(f)
+        try:
+            video_dataset.pop(f)
+        except: 
+            continue 
     view_df = view_df[view_df.predicted_view.isin(diastology_views)]
+    print('views:\n',view_df.predicted_view.unique())
 
     '''
-        Quality Control 
+        Quality Control for Images & Videos
     '''
     print(f'Conducting quality control for {len(view_df)} files')
-    quality_model = model_utils.load_quality_classifier()
-    quality_input = torch.stack(list(image_dataset.values()))
-    predicted_quality = model_utils.quality_inference(quality_input,quality_model,list(view_df.filename))
-    quality_df = pd.DataFrame({'filename':list(predicted_quality.keys()),
-                                    'pred_quality':list(predicted_quality.values())})
+    image_quality_model = model_utils.load_quality_classifier(input_type='image',
+                                                              weights_path='/workspace/vic/hfpef/model_weights/quality/image_quality_classifier.pt'
+                                                              )
+    video_quality_model = model_utils.load_quality_classifier(input_type='video',
+                                                              weights_path='/workspace/vic/hfpef/model_weights/quality/video_quality_classifier.pt'
+                                                              )
+    image_quality_input = torch.stack(list(image_dataset.values()))
+    predicted_image_quality = model_utils.quality_inference(image_quality_input,image_quality_model,list(image_dataset.keys()))
+    image_quality_df = pd.DataFrame({'filename':list(predicted_image_quality.keys()),
+                                    'pred_quality':list(predicted_image_quality.values())
+                                    })
+    if len(list(video_dataset.values())) > 0:
+        video_quality_input = torch.stack(list(video_dataset.values()))
+        predicted_video_quality = model_utils.quality_inference(video_quality_input,video_quality_model,list(video_dataset.keys()))
+        video_quality_df = pd.DataFrame({'filename':list(predicted_video_quality.keys()),
+                                     'pred_quality':list(predicted_video_quality.values())
+                                     })
+        quality_df = pd.concat([image_quality_df,video_quality_df])
+    else:
+        quality_df = image_quality_df
+    # predicted_quality = model_utils.quality_inference(quality_input,quality_model,list(view_df.filename))
     diastology = pd.merge(view_df,quality_df,on='filename')
     ### Save quality predictions
     if save_flag:
@@ -128,12 +151,16 @@ else:
     print('Calculating LVEF')
     a4c = diastology[diastology.predicted_view.isin(['A4C','A4C_LV'])]
     lvef = []
-    for filename in a4c.filename:
-        a4c_tensor = dataset[filename]
-        ef_model,ef_checkpoint = model_utils.ef_regressor()
-        ef = model_utils.predict_lvef(a4c_tensor,ef_model,ef_checkpoint)
-        lvef.append((ef,filename))
-    lvef = pd.DataFrame(lvef,columns=['LVEF','filename'])
+    if len(a4c)>0:
+        for filename in a4c.filename:
+            a4c_tensor = dataset[filename]
+            ef_model,ef_checkpoint = model_utils.ef_regressor()
+            ef = model_utils.predict_lvef(a4c_tensor,ef_model,ef_checkpoint)
+            lvef.append((ef,filename))
+        lvef = pd.DataFrame(lvef,columns=['LVEF','filename'])
+    else:
+        print('\tNo A4C found. Cannot calculate LVEF')
+        lvef = pd.DataFrame({'LVEF':0,'filename':''})
 
     '''
         Left Atrial Volume Calculation
@@ -141,7 +168,12 @@ else:
     la_model = model_utils.load_la_model()
     print('Calucating LAVi')
     a2c = diastology[diastology.predicted_view=='A2C']
-    if len(a2c)==0: 
+    if len(a2c)==0 and len(a4c)==0: 
+        print('\tNo A4C or A2C videos found. Cannot calculate LAVi')
+        lav = 0
+        lavi = 0
+        df_lavi = pd.DataFrame({'filename':[''],'LAVi':[0],'LAV':[0],'BSA':[bsa]})
+    elif len(a2c)==0 and len(a4c)>0: 
         print('\tNo A2C found. Using A4C only')
         left_atrial_volume = {}
         for filename in a4c.filename:
@@ -180,12 +212,14 @@ else:
         a2c_key = max(list(a2c_areas.keys()))
         a2c_mask_area = a2c_areas[a2c_key]
         try:
-            lav = model_utils.calc_lav_biplane(la_model,a4c_mask_area[0],a4c_mask_area[1],a2c_mask_area[0],a2c_mask_area[1])
+            lav = model_utils.calc_lav_biplane(a4c_mask_area[0],a4c_mask_area[1],a2c_mask_area[0],a2c_mask_area[1])
             lavi = lav/bsa 
             df_lavi = pd.DataFrame({'filename':[a4c_key,a2c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})
         except:
             lav = 0.
+            lavi = 0
             print('Left atrial volume was not calculated')
+            df_lavi = pd.DataFrame({'filename':[''],'LAVi':[0],'LAV':[0],'BSA':[bsa]})
     
     '''
         Doppler Measurements
