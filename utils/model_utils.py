@@ -5,6 +5,7 @@ import torchvision
 import tqdm
 import cv2 
 import numpy as np
+from pathlib import Path
 from torchvision.models.densenet import densenet121
 from torchvision.models.video import r2plus1d_18
 import torch.nn.functional as F
@@ -12,11 +13,14 @@ from utils.dicom_utils import change_dicom_color, get_doppler_region, find_horiz
 from utils import lav_mask
 from utils.constants import *
 
+cwd = Path.cwd()
+weights_dir = cwd.parent
+
 DOPPLER_WEIGHTS_DICT = {
-    'medevel':"/workspace/vic/hfpef/model_weights/dopper_models/medevel_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/medevel_weights.ckpt
-    'latevel':"/workspace/vic/hfpef/model_weights/dopper_models/latevel_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/latevel_weights.ckpt
-    'trvmax':"/workspace/vic/hfpef/model_weights/dopper_models/trvmax_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/trvmax_weights.ckpt
-    'eovera':"/workspace/vic/hfpef/model_weights/dopper_models/mvpeak_2c_weights.ckpt" # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/mvpeak_2c_weights.ckpt
+    'medevel':weights_dir/"weights/medevel_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/medevel_weights.ckpt
+    'latevel':weights_dir/"weights/latevel_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/latevel_weights.ckpt
+    'trvmax':weights_dir/"weights/trvmax_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/trvmax_weights.ckpt
+    'eovera':weights_dir/"weights/mvpeak_2c_weights.ckpt" # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/mvpeak_2c_weights.ckpt
 }
 
 ALL_VIEWS = [
@@ -120,7 +124,7 @@ ALL_VIEWS = [
 '''
     EchoNet-Dynamic LVEF Model and Inference
 '''
-def ef_regressor(weights_path='/workspace/vic/hfpef/model_weights/lvef/lvef_weights.pt'):
+def ef_regressor(weights_path=weights_dir/'weights/lvef_weights.pt'):
     device = torch.device("cuda:0")
     model = torchvision.models.video.__dict__["r2plus1d_18"](pretrained=True)
     model.fc = torch.nn.Linear(model.fc.in_features,1)
@@ -149,7 +153,7 @@ def predict_lvef(x,ef_model,ef_checkpoint,dims=(112,112)):
 '''
     Left Atrial Segmentation Model and Inference
 '''
-def load_la_model(device='cuda:0',weights_path='/workspace/vic/hfpef/model_weights/lav/lav_weights.pt'):
+def load_la_model(device='cuda:0',weights_path=weights_dir/'weights/lav_weights.pt'):
     model = torchvision.models.segmentation.__dict__['deeplabv3_resnet50']()
     model.classifier[-1] = torch.nn.Conv2d(
         model.classifier[-1].in_channels,
@@ -219,7 +223,7 @@ def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
 '''
     View Classification Model and Inference
 '''
-def load_view_classifier(weights_path='/workspace/vic/hfpef/model_weights/view/epoch=21-step=17842.ckpt'):
+def load_view_classifier(weights_path=weights_dir/'weights/view_classify.ckpt'):
     device=torch.device("cuda")
     vc_checkpoint = torch.load(weights_path,map_location='cpu')
     vc_state_dict={key[6:]:value for key,value in vc_checkpoint['state_dict'].items()}

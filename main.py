@@ -15,6 +15,7 @@ warnings.filterwarnings('ignore')
 # from diastology import utils 
 from utils import ase_guidelines,dicom_utils,model_utils,lav_mask
 
+weights_dir = Path.cwd()/'weights'
 
 diastology_views = [
     'A4C','A4C_LV','A2C', # EF, LAVi 
@@ -101,10 +102,8 @@ else:
     for f in to_remove:
         dataset.pop(f)
         image_dataset.pop(f)
-        try:
+        if f in video_dataset:
             video_dataset.pop(f)
-        except: 
-            continue 
     view_df = view_df[view_df.predicted_view.isin(diastology_views)]
     print('views:\n',view_df.predicted_view.unique())
 
@@ -113,10 +112,10 @@ else:
     '''
     print(f'Conducting quality control for {len(view_df)} files')
     image_quality_model = model_utils.load_quality_classifier(input_type='image',
-                                                              weights_path='/workspace/vic/hfpef/model_weights/quality/image_quality_classifier.pt'
+                                                              weights_path=weights_dir/'image_quality_classifier.pt'
                                                               )
     video_quality_model = model_utils.load_quality_classifier(input_type='video',
-                                                              weights_path='/workspace/vic/hfpef/model_weights/quality/video_quality_classifier.pt'
+                                                              weights_path=weights_dir/'video_quality_classifier.pt'
                                                               )
     image_quality_input = torch.stack(list(image_dataset.values()))
     predicted_image_quality = model_utils.quality_inference(image_quality_input,image_quality_model,list(image_dataset.keys()))
@@ -199,6 +198,7 @@ else:
                 a4c_mask,a4c_area = model_utils.la_seg_inf(la_model,a4c_tensor)
                 a4c_areas[a4c_area] = (a4c_mask,a4c_area)
             except:
+                print(f'\tCould not calculate LAV from {filename}')
                 continue
         for filename in a2c.filename:
             try:
@@ -206,6 +206,7 @@ else:
                 a2c_mask,a2c_area = model_utils.la_seg_inf(la_model,a2c_tensor)
                 a2c_areas[a2c_area] = (a2c_mask,a2c_area)
             except:
+                print(f'\tCould not calculate LAV from {filename}')
                 continue
         a4c_key = max(list(a4c_areas.keys())) # Find A4C with maximum LA area
         a4c_mask_area = a4c_areas[a4c_key] # Find corresponding mask and area
@@ -218,7 +219,7 @@ else:
         except:
             lav = 0.
             lavi = 0
-            print('Left atrial volume was not calculated')
+            print('Left atrial volume could not be calculated')
             df_lavi = pd.DataFrame({'filename':[''],'LAVi':[0],'LAV':[0],'BSA':[bsa]})
     
     '''
