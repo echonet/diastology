@@ -5,17 +5,22 @@ import torchvision
 import tqdm
 import cv2 
 import numpy as np
+from pathlib import Path
 from torchvision.models.densenet import densenet121
+from torchvision.models.video import r2plus1d_18
 import torch.nn.functional as F
 from utils.dicom_utils import change_dicom_color, get_doppler_region, find_horizontal_line, calculate_weighted_centroids_with_meshgrid
 from utils import lav_mask
 from utils.constants import *
 
+cwd = Path.cwd()
+weights_dir = cwd.parent
+
 DOPPLER_WEIGHTS_DICT = {
-    'medevel':"<path to weights>", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/medevel_weights.ckpt
-    'latevel':"<path to weights>", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/latevel_weights.ckpt
-    'trvmax':"<path to weights>", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/trvmax_weights.ckpt
-    'eovera':"<path to weights>" # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/mvpeak_2c_weights.ckpt
+    'medevel':weights_dir/"weights/medevel_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/medevel_weights.ckpt
+    'latevel':weights_dir/"weights/latevel_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/latevel_weights.ckpt
+    'trvmax':weights_dir/"weights/trvmax_weights.ckpt", # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/trvmax_weights.ckpt
+    'eovera':weights_dir/"weights/mvpeak_2c_weights.ckpt" # Download at: https://github.com/echonet/measurements/blob/main/weights/Doppler_models/mvpeak_2c_weights.ckpt
 }
 
 ALL_VIEWS = [
@@ -119,11 +124,10 @@ ALL_VIEWS = [
 '''
     EchoNet-Dynamic LVEF Model and Inference
 '''
-def ef_regressor(weights_path='<path to weights>'):
+def ef_regressor(weights_path=weights_dir/'weights/lvef_weights.pt'):
     device = torch.device("cuda:0")
     model = torchvision.models.video.__dict__["r2plus1d_18"](pretrained=True)
     model.fc = torch.nn.Linear(model.fc.in_features,1)
-    model.fc.bias.data[0] = 55.6
     if device.type=='cuda':
         model = torch.nn.DataParallel(model)
     model.to(device)
@@ -149,7 +153,7 @@ def predict_lvef(x,ef_model,ef_checkpoint,dims=(112,112)):
 '''
     Left Atrial Segmentation Model and Inference
 '''
-def load_la_model(device='cuda:0',weights_path='<path to weights>'):
+def load_la_model(device='cuda:0',weights_path=weights_dir/'weights/lav_weights.pt'):
     model = torchvision.models.segmentation.__dict__['deeplabv3_resnet50']()
     model.classifier[-1] = torch.nn.Conv2d(
         model.classifier[-1].in_channels,
@@ -192,7 +196,7 @@ def calc_lav_from_a4c(mask,area):
 
 def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
     ### Segment LA from A4C 
-    a4c_mask,a4c_area = la_seg_inf(model,a4c)
+    # a4c_mask,a4c_area = la_seg_inf(model,a4c)
     a4c_area = lav_mask.filter_areas(a4c_area)
     a4c_mask = a4c_mask[np.argmax(a4c_area)]
     ### Get geometric features of A4C LA mask
@@ -219,10 +223,11 @@ def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
 '''
     View Classification Model and Inference
 '''
-def load_view_classifier(weights_path='<path to weights>'):
+def load_view_classifier(weights_path=weights_dir/'weights/view_classify.ckpt'):
     device=torch.device("cuda")
-    vc_checkpoint = torch.load(weights_path)
+    vc_checkpoint = torch.load(weights_path,map_location='cpu')
     vc_state_dict={key[6:]:value for key,value in vc_checkpoint['state_dict'].items()}
+    # vc_state_dict = {key.replace('m.','',1):value for key,value in vc_checkpoint.items()}
     view_classifier = torchvision.models.convnext_base()
     view_classifier.classifier[-1] = torch.nn.Linear(
         view_classifier.classifier[-1].in_features,len(ALL_VIEWS)
@@ -259,13 +264,16 @@ def view_inference(view_input,view_classifier,filename,batch_size=512):
 '''
     Quality Control Model and Inference
 '''
-def load_quality_classifier(weights_path='<path to weights>',
+def load_quality_classifier(input_type,
+                            weights_path,
                             device=torch.device('cuda')):
-    model = densenet121(num_classes=1)
     weights = torch.load(weights_path,map_location=device)
-    ### TO-DO: Double check that this is right for densenet
-    # weights = {key[2:]:val for key,val in weights.items()}
-    weights = {key.replace('m.','',1):val for key,val in weights.items()}
+    if input_type=='image':
+        model = densenet121(num_classes=1)
+        weights = {key.replace('m.','',1):val for key,val in weights.items()}
+    elif input_type=='video':
+        model = r2plus1d_18(num_classes=1)
+        weights = {key[2:]:val for key,val in weights.items()}
     model.load_state_dict(weights)
     model.to(device)
     return model.eval()
