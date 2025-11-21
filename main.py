@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 # from diastology import utils 
 from utils import ase_guidelines,dicom_utils,model_utils,lav_mask
 
-weights_dir = Path.cwd()/'weights'
+weights_dir = Path.cwd().parent/'weights'
 
 diastology_views = [
     'A4C','A4C_LV','A2C', # EF, LAVi 
@@ -36,7 +36,7 @@ parser.add_argument('--path',required=True,type=str,help='Path to directory of s
 parser.add_argument('--guideline_year',required=True,type=int,help='Please indicate which year of ASE guideline to follow - 2016 vs 2025')
 parser.add_argument('--quality_threshold',required=False,type=float,help='Minimum echo quality')
 parser.add_argument('--to_save',required=False,type=bool,help='Option to save results')
-parser.add_argument('--save_path',required=False,type=str,help='Path for saving diastology results')
+parser.add_argument('--save_path',required=False,type=str,help='Directory to save csv of diastology results in')
 
 args = parser.parse_args()
 ase_year = args.guideline_year
@@ -159,7 +159,7 @@ else:
         lvef = pd.DataFrame(lvef,columns=['LVEF','filename'])
     else:
         print('\tNo A4C found. Cannot calculate LVEF')
-        lvef = pd.DataFrame({'LVEF':0,'filename':''})
+        lvef = pd.DataFrame({'LVEF':[0],'filename':['']})
 
     '''
         Left Atrial Volume Calculation
@@ -215,7 +215,7 @@ else:
         try:
             lav = model_utils.calc_lav_biplane(a4c_mask_area[0],a4c_mask_area[1],a2c_mask_area[0],a2c_mask_area[1])
             lavi = lav/bsa 
-            df_lavi = pd.DataFrame({'filename':[a4c_key,a2c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})
+            df_lavi = pd.DataFrame({'filename':[a4c_key,a2c_key],'LAVi':[lavi,lavi],'LAV':[lav,lav],'BSA':[bsa,bsa]})
         except:
             lav = 0.
             lavi = 0
@@ -335,6 +335,7 @@ else:
     diastolic_grade = ase_guidelines.map_grade_to_text[grade]
     print(f'Found {diastolic_grade}.')
     parameters['diastology_grade'] = diastolic_grade
+    parameters['numeric_diastology_grade'] = grade
     save_diastology_path = save_path/'diastology.csv'
     if save_flag:
         parameters.to_csv(save_diastology_path,index=None)
