@@ -131,7 +131,7 @@ def ase2025(medevel,latevel,trvmax,lavi,eovera,e,
     if len(abnormal) == 3:
         return 3 
     if len(abnormal) == 2 or (len(abnormal)==1 and 'increased_Ee' in abnormal) or (len(abnormal)==1 and 'increased_TR' in abnormal): 
-        print(len(abnormal),abnormal)
+        # print(len(abnormal),abnormal)
         ### If LAVi abnormal 
         if lavi > t_lavi or pulmsd <= t_pulmsd or lars <= t_lars: 
             ### Increased LAP, can't grade bc NO E/A

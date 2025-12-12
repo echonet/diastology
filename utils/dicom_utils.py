@@ -9,6 +9,7 @@ from PIL import Image
 from utils.constants import *
 import matplotlib.pyplot as plt
 from pathlib import Path
+import random
 
 '''
 Preprocess DICOM files
@@ -40,10 +41,12 @@ def convert_image_dicom(pixel_array,n=224):
     image_tensor = image_tensor / 255. 
     return image_tensor
 
-def convert_video_dicom(pixel_array):
-    pixel_tensor = torch.from_numpy(pixel_array) # F,H,W,C
+def convert_video_dicom(pixel_array,n=112):
+    pixel_tensor = torch.from_numpy(pixel_array).float() # F,H,W,C
     pixel_tensor = pixel_tensor.permute(0,-1,1,2) # F,C,H,W
-    avi_tensor = torch.tensor(pixel_tensor).squeeze() # torch.tensor(resize_array).squeeze()
+    resizer = torchvision.transforms.Resize((n,n))
+    avi_tensor = resizer(pixel_tensor)
+    avi_tensor = torch.tensor(avi_tensor).squeeze() # torch.tensor(resize_array).squeeze()
     return avi_tensor
 
 def pull_first_frame(avi_tensor,n=224):
@@ -54,6 +57,16 @@ def pull_first_frame(avi_tensor,n=224):
     first_frame -= VIEW_MEAN.reshape((3,1,1))
     first_frame /= VIEW_STD.reshape((3,1,1))
     return first_frame
+
+def pull_random_frame(avi_tensor,n=224):
+    resizer = torchvision.transforms.Resize((n,n))
+    avi = resizer(avi_tensor)
+    n_frames = avi.shape[1]
+    random_idx = random.randint(0,n_frames-1)
+    frame = avi[random_idx,:,:,:]
+    frame = frame.float()
+    frame /= 255.
+    return frame
 
 '''
     Extract BSA from metadata
