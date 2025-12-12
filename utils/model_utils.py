@@ -1,13 +1,14 @@
 import pydicom
 from torchvision.models.segmentation import deeplabv3_resnet50
+from torchvision.models.densenet import densenet121
+from torchvision.models.video import r2plus1d_18
+from torchvision.models import convnext_base
 import torch
 import torchvision
 import tqdm
 import cv2 
 import numpy as np
 from pathlib import Path
-from torchvision.models.densenet import densenet121
-from torchvision.models.video import r2plus1d_18
 import torch.nn.functional as F
 from utils.dicom_utils import change_dicom_color, get_doppler_region, find_horizontal_line, calculate_weighted_centroids_with_meshgrid
 from utils import lav_mask
@@ -121,61 +122,167 @@ ALL_VIEWS = [
     "Doppler_A4C_TV_PW",
 ]
 
+CLASS_LIST = ['BMode_A2C',
+ 'BMode_A2C_LV',
+ 'BMode_A3C',
+ 'BMode_A3C_LV',
+ 'BMode_A4C',
+ 'BMode_A4C_LA',
+ 'BMode_A4C_LV',
+ 'BMode_A4C_MV',
+ 'BMode_A4C_RV',
+ 'BMode_A5C',
+ 'BMode_DOPPLER_A2C',
+ 'BMode_DOPPLER_A3C',
+ 'BMode_DOPPLER_A3C_AV',
+ 'BMode_DOPPLER_A3C_MV',
+ 'BMode_DOPPLER_A4C_Apex',
+ 'BMode_DOPPLER_A4C_IAS',
+ 'BMode_DOPPLER_A4C_IVS',
+ 'BMode_DOPPLER_A4C_MV',
+ 'BMode_DOPPLER_A4C_Pulvns',
+ 'BMode_DOPPLER_A4C_TV',
+ 'BMode_DOPPLER_A5C',
+ 'BMode_DOPPLER_PLAX_AV_MV',
+ 'BMode_DOPPLER_PLAX_AV_zoomed',
+ 'BMode_DOPPLER_PLAX_Ascending_Aorta',
+ 'BMode_DOPPLER_PLAX_IVS',
+ 'BMode_DOPPLER_PLAX_MV_zoomed',
+ 'BMode_DOPPLER_PLAX_RVIT',
+ 'BMode_DOPPLER_PLAX_RVIT_CW',
+ 'BMode_DOPPLER_PLAX_RVOT',
+ 'BMode_DOPPLER_PSAX_IAS',
+ 'BMode_DOPPLER_PSAX_IVS',
+ 'BMode_DOPPLER_PSAX_MV',
+ 'BMode_DOPPLER_PSAX_level_great_vessels_AV',
+ 'BMode_DOPPLER_PSAX_level_great_vessels_PA',
+ 'BMode_DOPPLER_PSAX_level_great_vessels_TV',
+ 'BMode_DOPPLER_SC_4C_IAS',
+ 'BMode_DOPPLER_SC_4C_IVS',
+ 'BMode_DOPPLER_SC_IVC',
+ 'BMode_DOPPLER_SC_aorta',
+ 'BMode_DOPPLER_SSN_Aortic_Arch',
+ 'BMode_PLAX',
+ 'BMode_PLAX_AV_MV',
+ 'BMode_PLAX_Proximal_Ascending_Aorta',
+ 'BMode_PLAX_RV_inflow',
+ 'BMode_PLAX_RV_outflow',
+ 'BMode_PLAX_Zoom_out',
+ 'BMode_PLAX_zoomed_AV',
+ 'BMode_PLAX_zoomed_MV',
+ 'BMode_PSAX_(level_great_vessels)',
+ 'BMode_PSAX_(level_great_vessels)_focus_on_PV_and_PA',
+ 'BMode_PSAX_(level_great_vessels)_focus_on_TV',
+ 'BMode_PSAX_(level_great_vessels)_zoomed_AV',
+ 'BMode_PSAX_(level_of_MV)',
+ 'BMode_PSAX_(level_of_apex)',
+ 'BMode_PSAX_(level_of_papillary_muscles)',
+ 'BMode_SSN_aortic_arch',
+ 'BMode_Subcostal_4C',
+ 'BMode_Subcostal_Abdominal_Aorta',
+ 'BMode_Subcostal_IVC',
+ 'DOPPLER_A2C_MR_CW',
+ 'DOPPLER_A2C_MV_CW',
+ 'DOPPLER_A2C_MV_MR_CW',
+ 'DOPPLER_A3C _AV_AR_CW',
+ 'DOPPLER_A3C_AR_CW',
+ 'DOPPLER_A3C_AV_CW',
+ 'DOPPLER_A3C_AV_PW',
+ 'DOPPLER_A3C_LVOT_PW',
+ 'DOPPLER_A3C_MR_CW',
+ 'DOPPLER_A3C_MV_CW',
+ 'DOPPLER_A3C_MV_MR_CW',
+ 'DOPPLER_A4C_IVRT_PW',
+ 'DOPPLER_A4C_MR_CW',
+ 'DOPPLER_A4C_MV_CW',
+ 'DOPPLER_A4C_MV_MR_CW',
+ 'DOPPLER_A4C_MV_PW',
+ 'DOPPLER_A4C_PV_PW',
+ 'DOPPLER_A4C_TV_CW',
+ 'DOPPLER_A4C_TV_CW_Mayoview',
+ 'DOPPLER_A4C_TV_PW',
+ 'DOPPLER_A5C_AV_AR_CW',
+ 'DOPPLER_A5C_AV_CW',
+ 'DOPPLER_A5C_AV_PW',
+ 'DOPPLER_A5C_LVOT_PW',
+ 'DOPPLER_LV_midcavitary_PW',
+ 'DOPPLER_PLAX_RVIT_CW',
+ 'DOPPLER_PSAX_Great_vessel_level_PA_CW',
+ 'DOPPLER_PSAX_Great_vessel_level_PA_PW',
+ 'DOPPLER_PSAX_Great_vessel_level_TV_CW',
+ 'DOPPLER_SC_HV/IVC_PW',
+ 'DOPPLER_SC_TV_CWQ',
+ 'DOPPLER_SC_abdominal_AO_PW',
+ 'DOPPLER_SSN_descending_AO_CW',
+ 'DOPPLER_SSN_descending_AO_PW',
+ 'M-mode_A4C_TV_TAPSE',
+ 'M-mode_PSAX_AV',
+ 'M-mode_PSAX_LV_PM level',
+ 'M-mode_PSAX_MV level',
+ 'M_mode_A4C_RV_TAPSE',
+ 'M_mode_PLAX_Ao_LA',
+ 'M_mode_PLAX_LV',
+ 'M_mode_PLAX_MV',
+ 'M_mode_SC_IVC',
+ 'TDI_MV_Lateral e',
+ 'TDI_MV_Medial e',
+ 'TDI_TV_Lateral S', 'NON_ULTRASOUND'] # Same list as used during training
+OUTPUT_NAMES = CLASS_LIST + ["annotation"]
+
+
 '''
     EchoNet-Dynamic LVEF Model and Inference
 '''
-def ef_regressor(weights_path=weights_dir/'weights/lvef_weights.pt'):
-    device = torch.device("cuda:0")
+def ef_regressor(device=torch.device("cuda:1"),weights_path=weights_dir/'weights/lvef_weights.pt'):
     model = torchvision.models.video.__dict__["r2plus1d_18"](pretrained=True)
     model.fc = torch.nn.Linear(model.fc.in_features,1)
     if device.type=='cuda':
-        model = torch.nn.DataParallel(model)
+        model = torch.nn.DataParallel(model,device_ids=[1])
     model.to(device)
-    checkpoint = torch.load(weights_path)
+    checkpoint = torch.load(weights_path,map_location=device)
     model.load_state_dict(checkpoint['state_dict'])
     return model.eval(), checkpoint
 
-def predict_lvef(x,ef_model,ef_checkpoint,dims=(112,112)):
+def predict_lvef(x,ef_model,ef_checkpoint,device=torch.device("cuda:1"),dims=(112,112)):
     ### x is a 4D tensor of an echo
     mean = ef_checkpoint['mean'].reshape(3,1,1,1)
     std = ef_checkpoint['std'].reshape(3,1,1,1)
-    resize = torchvision.transforms.Resize(dims)
-    x_resize = resize(x)
-    x_resize = x_resize.permute(1,0,2,3) # Change from F,C,H,W to C,F,H,W
-    x_resize -= mean
-    x_resize /= std
-    c,f,h,w = x_resize.shape
-    x_resize = x_resize[:,np.arange(0,f,2),:,:] # Sample every other frame 
-    x_resize = torch.tensor(x_resize).unsqueeze(0)
-    ef_prediction = ef_model(x_resize).item()
+    device = torch.device("cuda:1")
+    x = x.permute(1,0,2,3) # Change from F,C,H,W to C,F,H,W
+    x -= mean
+    x /= std
+    c,f,h,w = x.shape
+    x = x[:,np.arange(0,f,2),:,:] # Sample every other frame 
+    x = torch.tensor(x).unsqueeze(0)
+    x = x.to(device)
+    ef_prediction = ef_model(x).item()
     return ef_prediction
 
 '''
     Left Atrial Segmentation Model and Inference
 '''
-def load_la_model(device='cuda:0',weights_path=weights_dir/'weights/lav_weights.pt'):
+def load_la_model(device=torch.device("cuda:1"),weights_path=weights_dir/'weights/lav_weights.pt'):
     model = torchvision.models.segmentation.__dict__['deeplabv3_resnet50']()
     model.classifier[-1] = torch.nn.Conv2d(
         model.classifier[-1].in_channels,
         1,
         kernel_size=model.classifier[-1].kernel_size,
     )
-    model = torch.nn.DataParallel(model)
+    model = torch.nn.DataParallel(model,device_ids=[1])
     model.to(device)
     checkpoint = torch.load(weights_path,map_location=device)
     model.load_state_dict(checkpoint['state_dict'])
     return model.eval()
 
-def la_seg_inf(model,x,n=112):
+def la_seg_inf(model,x,device=torch.device("cuda:1"),n=112):
     f,h,w,c = x.shape
     mean = GLOBAL_LA_MEAN.reshape(1,3,1,1)
     std = GLOBAL_LA_STD.reshape(1,3,1,1)
-    resize = torchvision.transforms.Resize((n,n))
-    resize_x = resize(x)
-    resize_x -= mean 
-    resize_x /= std 
-    resize_x = resize_x.float()
-    seg = model(resize_x)['out']
+    x -= mean 
+    x /= std 
+    x = x.float()
+    x = x.to(device)
+    seg = model(x)['out']
     logits = seg.detach().cpu().numpy()
     logits = np.concatenate([logits])
     logits = logits[:,0,:,:]
@@ -223,11 +330,9 @@ def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
 '''
     View Classification Model and Inference
 '''
-def load_view_classifier(weights_path=weights_dir/'weights/view_classify.ckpt'):
-    device=torch.device("cuda")
+def load_view_classifier(device=torch.device("cuda:1"),weights_path=weights_dir/'weights/view_classify.ckpt'):
     vc_checkpoint = torch.load(weights_path,map_location='cpu')
     vc_state_dict={key[6:]:value for key,value in vc_checkpoint['state_dict'].items()}
-    # vc_state_dict = {key.replace('m.','',1):value for key,value in vc_checkpoint.items()}
     view_classifier = torchvision.models.convnext_base()
     view_classifier.classifier[-1] = torch.nn.Linear(
         view_classifier.classifier[-1].in_features,len(ALL_VIEWS)
@@ -239,8 +344,7 @@ def load_view_classifier(weights_path=weights_dir/'weights/view_classify.ckpt'):
         param.requires_grad = False
     return view_classifier.eval()
 
-def view_inference(view_input,view_classifier,filename,batch_size=512):
-    device = torch.device("cuda")
+def view_inference(view_input,view_classifier,filename,device=torch.device("cuda:1"),batch_size=512):
     view_labels = torch.zeros(len(view_input))
     view_ds = torch.utils.data.TensorDataset(view_input,view_labels)
     batch_size = 512
@@ -262,11 +366,44 @@ def view_inference(view_input,view_classifier,filename,batch_size=512):
     return predicted_view
 
 '''
+    106 View Classifier
+'''
+def load_view_106_model(device=torch.device('cuda:1'),weights_path='/workspace/vic/weights/updated_view_classifer.pt'): 
+    num_classes = len(CLASS_LIST)
+    model = convnext_base(num_classes=num_classes+1)
+    checkpoint = torch.load(weights_path,map_location="cpu")
+    checkpoint = {k[2:]:v for k,v in checkpoint.items()}
+    model.load_state_dict(checkpoint)
+    model.to(device)
+    return model.eval() 
+
+def view_106_inference(dataset,model,filename,device=torch.device("cuda:1"),batch_size=64):
+    view_labels = torch.zeros(len(dataset))
+    view_ds = torch.utils.data.TensorDataset(dataset,view_labels)
+    view_loader = torch.utils.data.DataLoader(
+        view_ds,batch_size=batch_size,
+        num_workers=0,shuffle=False
+    )
+    yhat = [""]*len(view_loader)
+    with torch.no_grad():
+        for idx,(image,views) in tqdm.tqdm(enumerate(view_loader)):
+            image = image.to(device)
+            logits = model(image)
+            confidence_score = torch.nn.functional.softmax(logits[:,:106],dim=1).cpu()
+            pred_views = [CLASS_LIST[score] for score in torch.argmax(torch.tensor(confidence_score),dim=1)]
+            start = idx*batch_size
+            end = min((idx+1)*batch_size,len(view_ds))
+            yhat[start:end] = pred_views
+    predicted_view = {key:val for (key,val) in zip(filename,yhat)}
+    return predicted_view
+
+
+'''
     Quality Control Model and Inference
 '''
 def load_quality_classifier(input_type,
                             weights_path,
-                            device=torch.device('cuda')):
+                            device=torch.device('cuda:1')):
     weights = torch.load(weights_path,map_location=device)
     if input_type=='image':
         model = densenet121(num_classes=1)
@@ -278,17 +415,16 @@ def load_quality_classifier(input_type,
     model.to(device)
     return model.eval()
 
-def quality_inference(quality_input,quality_model,filename,batch_size=512):
+def quality_inference(quality_input,quality_model,filename,device=torch.device("cuda:1"),batch_size=512):
     quality_labels = torch.zeros(len(quality_input))
     quality_ds = torch.utils.data.TensorDataset(quality_input,quality_labels)
     quality_dl = torch.utils.data.DataLoader(quality_ds,batch_size=batch_size,num_workers=1,shuffle=False)
     next(iter(quality_dl))
-    device = torch.device("cuda")
     yhat = np.zeros(len(quality_ds))
     with torch.no_grad():
-        for idx,(image,label) in tqdm.tqdm(enumerate(quality_dl)):
-            image = image.to(device)
-            preds = quality_model(image)
+        for idx,(x,label) in tqdm.tqdm(enumerate(quality_dl)):
+            x = x.to(device)
+            preds = quality_model(x)
             start = idx * batch_size
             end = min((idx + 1) * batch_size, len(quality_ds))
             activated = F.sigmoid(preds).squeeze().cpu().numpy()
@@ -300,13 +436,13 @@ def quality_inference(quality_input,quality_model,filename,batch_size=512):
     EchoNet-Measurements Doppler Parameter Models and Inference 
 '''
 def load_doppler_model(parameter):
-    device = 'cuda:0'
+    device = 'cuda:1'
     weights_path = DOPPLER_WEIGHTS_DICT[parameter]
     if parameter == 'eovera':
         num_classes = 2 
     else: 
         num_classes = 1
-    weights = torch.load(weights_path,map_location='cuda:0')
+    weights = torch.load(weights_path,map_location='cuda:1')
     backbone = deeplabv3_resnet50(num_classes=num_classes)
     weights = {k.replace('m.',''):v for k,v in weights.items()}
     backbone.load_state_dict(weights)
@@ -314,8 +450,7 @@ def load_doppler_model(parameter):
     return backbone 
 
 ### Runs inference using weights from models for medial e', lateral e', or TR Vmax 
-def doppler_inference(dicom_path,parameter):
-    device = 'cuda:0'
+def doppler_inference(dicom_path,parameter,device=torch.device('cuda:1')):
     ds = pydicom.dcmread(dicom_path)
     input_image = change_dicom_color(dicom_path) #ds.pixel_array
     x0,x1,y0,y1,conversion_factor = get_doppler_region(ds)
@@ -325,7 +460,7 @@ def doppler_inference(dicom_path,parameter):
     doppler_area_tensor = torch.tensor(input_dicom_doppler_area)
     doppler_area_tensor = doppler_area_tensor.permute(2, 0, 1).unsqueeze(0)
     doppler_area_tensor = doppler_area_tensor.float() / 255.0
-    doppler_area_tensor = doppler_area_tensor.to('cuda:0')
+    doppler_area_tensor = doppler_area_tensor.to('cuda:1')
     backbone = load_doppler_model(parameter=parameter)
     backbone = backbone.to(device)
     param = next(iter(backbone.parameters()))
@@ -443,7 +578,7 @@ def eovera_forward_pass(backbone,inputs):
     return point_x1, point_y1, point_x2, point_y2
 
 def eovera_inference(dicom_path):
-    device = 'cuda:0'
+    device = 'cuda:1'
     ds = pydicom.dcmread(dicom_path)
     input_image = change_dicom_color(dicom_path)
     x0,x1,y0,y1,conversion_factor = get_doppler_region(ds)
