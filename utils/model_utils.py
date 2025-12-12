@@ -368,7 +368,7 @@ def view_inference(view_input,view_classifier,filename,device=torch.device("cuda
 '''
     106 View Classifier
 '''
-def load_view_106_model(device=torch.device('cuda:1'),weights_path='/workspace/vic/weights/updated_view_classifer.pt'): 
+def load_view_106_model(device=torch.device('cuda:1'),weights_path=weights_dir/'weights/updated_view_classifer.pt'): 
     num_classes = len(CLASS_LIST)
     model = convnext_base(num_classes=num_classes+1)
     checkpoint = torch.load(weights_path,map_location="cpu")
