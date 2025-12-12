@@ -75,7 +75,7 @@ else:
         if len(pixels.shape)==4 and pixels.shape[0]>=32: 
             x = dicom_utils.convert_video_dicom(pixels)
             x_random_frame = dicom_utils.pull_random_frame(x)
-            video_dataset[f] = x[:32,:,:,:]
+            video_dataset[f] = x
             image_dataset[f] = x_random_frame
         else:
             x = dicom_utils.convert_image_dicom(pixels)
@@ -122,7 +122,9 @@ else:
                                     'pred_quality':list(predicted_image_quality.values())
                                     })
     if len(list(video_dataset.values())) > 0:
-        videos = [x.permute(1,0,2,-1) for x in list(video_dataset.values())]
+        max_frames = max([v.shape[0] for v in list(video_dataset.values())])
+        videos = model_utils.pad(list(video_dataset.values()),max_frames)
+        videos = [x.permute(1,0,2,-1) for x in videos]
         video_quality_input = torch.stack(videos)
         predicted_video_quality = model_utils.quality_inference(video_quality_input,video_quality_model,list(video_dataset.keys()))
         video_quality_df = pd.DataFrame({'filename':list(predicted_video_quality.keys()),

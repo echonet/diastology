@@ -600,3 +600,13 @@ def eovera_inference(dicom_path):
     Inference_A_Vel = round(abs((point_y2 - horizontal_y) * conversion_factor),4)
     Inference_EperA = round(Inference_E_Vel / Inference_A_Vel, 3)
     return input_image,y0,point_x1,point_x2,point_y1,point_y2,Inference_A_Vel,Inference_E_Vel,Inference_EperA
+
+def pad(avis,max_frames):
+    padded = []
+    for a in avis:
+        pad_len = max_frames - a.shape[0]
+        if pad_len > 0:
+            pad = torch.zeros((pad_len, *a.shape[1:]),dtype=a.dtype,device=a.device)
+            a = torch.cat([a, pad], dim=0)
+        padded.append(a)
+    return padded
