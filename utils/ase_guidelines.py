@@ -13,7 +13,10 @@ map_grade_to_text = {
 
 def calc_eeprime(E=0,latevel=100,medevel=100):
     if E!=0:
-        if (latevel!=100) & (medevel!=100):
+        if (latevel==0) & (medevel==0):
+            print("No lateral or septal e' available. E/e' set to 0")
+            return 0.
+        elif (latevel!=100) & (medevel!=100):
             return E/(np.mean([latevel,medevel]))
         elif (latevel==100) & (medevel!=100):
             return E/medevel

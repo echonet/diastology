@@ -34,7 +34,11 @@ def change_dicom_color(dcm_path):
 
 def convert_image_dicom(pixel_array,n=224):
     pixel_array = (pixel_array / np.max(pixel_array) * 255).astype(np.uint8)
-    image = Image.fromarray(pixel_array)
+    try:
+        image = Image.fromarray(pixel_array)
+    except: 
+        print('Incompatible data type - ',pixel_array.shape)
+        return 
     image = image.resize((n,n))
     image_tensor = torch.tensor(np.array(image),dtype=torch.float)
     image_tensor = image_tensor.permute(-1,0,1)
@@ -42,12 +46,14 @@ def convert_image_dicom(pixel_array,n=224):
     return image_tensor
 
 def convert_video_dicom(pixel_array,n=112):
+    og_shape = pixel_array.shape
+    h0,w0 = og_shape[1],og_shape[2]
     pixel_tensor = torch.from_numpy(pixel_array).float() # F,H,W,C
     pixel_tensor = pixel_tensor.permute(0,-1,1,2) # F,C,H,W
     resizer = torchvision.transforms.Resize((n,n))
     avi_tensor = resizer(pixel_tensor)
     avi_tensor = torch.tensor(avi_tensor).squeeze() # torch.tensor(resize_array).squeeze()
-    return avi_tensor
+    return avi_tensor,h0,w0
 
 def pull_first_frame(avi_tensor,n=224):
     resizer = torchvision.transforms.Resize((n,n))
@@ -61,7 +67,7 @@ def pull_first_frame(avi_tensor,n=224):
 def pull_random_frame(avi_tensor,n=224):
     resizer = torchvision.transforms.Resize((n,n))
     avi = resizer(avi_tensor)
-    n_frames = avi.shape[1]
+    n_frames = avi.shape[0]
     random_idx = random.randint(0,n_frames-1)
     frame = avi[random_idx,:,:,:]
     frame = frame.float()
@@ -86,7 +92,7 @@ def get_bsa(dcm_path):
         return bsa
     except:
         ## Default 
-        return 1.75 
+        return 1.
 
 '''
     Helper functions for Doppler measurements with EchoNet-Measurements

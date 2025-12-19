@@ -323,10 +323,9 @@ def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
     ### Calculate disc axes on A4C again using information from A2C 
     ### Uses minimum disc height calculated from A2C vs A4C
     h,length,a4c_axes,a4c_endpts = lav_mask.find_axes(a4c_contour,a4c_mmitral,a4c_mperpend,a4c_mp,a4c_end,a2c_end)
-
     ### Calculate LAV using biplane MOD
     lav = lav_mask.calc_mod_volume(h,a4c_axes,a2c_axes)
-    return lav
+    return lav#*scale
 '''
     View Classification Model and Inference
 '''
@@ -415,7 +414,7 @@ def load_quality_classifier(input_type,
     model.to(device)
     return model.eval()
 
-def quality_inference(quality_input,quality_model,filename,device=torch.device("cuda:1"),batch_size=512):
+def quality_inference(quality_input,quality_model,filename,device=torch.device("cuda:1"),batch_size=32):
     quality_labels = torch.zeros(len(quality_input))
     quality_ds = torch.utils.data.TensorDataset(quality_input,quality_labels)
     quality_dl = torch.utils.data.DataLoader(quality_ds,batch_size=batch_size,num_workers=1,shuffle=False)
@@ -432,7 +431,7 @@ def quality_inference(quality_input,quality_model,filename,device=torch.device("
     predicted_quality = {key:val for (key,val) in zip(filename,yhat)}
     return predicted_quality
 
-'''
+''' 
     EchoNet-Measurements Doppler Parameter Models and Inference 
 '''
 def load_doppler_model(parameter):
@@ -564,7 +563,8 @@ def eovera_forward_pass(backbone,inputs):
         min_distance_paired_coord = min(non_zero_distance_btw_centroids, key=non_zero_distance_btw_centroids.get)
         pair_coords = [min_distance_coord, min_distance_paired_coord] 
     except:
-        ValueError("Error: min_distance_coord is not found, due to low prediction score. Select Good quality MVPeak Doppler data")
+        print("Error: min_distance_coord is not found, due to low prediction score. Please select higher quality MVPeak Doppler data")
+        return 0, 0, 0, 0
     point_x1, point_y1= pair_coords[0][0], pair_coords[0][1] 
     point_x2, point_y2 = pair_coords[1][0], pair_coords[1][1]
             
@@ -573,7 +573,8 @@ def eovera_forward_pass(backbone,inputs):
 
     distance_x1_x2 = abs(point_x1 - point_x2)
     if distance_x1_x2 > 300:
-        ValueError("Error: The distance between two points is too far. Please select the good quality Doppler data.")
+        print("Error: The distance between two points is too far. Please select higher quality Doppler data.")
+        return 0,0,0,0
             
     return point_x1, point_y1, point_x2, point_y2
 
@@ -606,7 +607,7 @@ def pad(avis,max_frames):
     for a in avis:
         pad_len = max_frames - a.shape[0]
         if pad_len > 0:
-            pad = torch.zeros((pad_len, *a.shape[1:]),dtype=a.dtype,device=a.device)
-            a = torch.cat([a, pad], dim=0)
+            pad = torch.zeros((pad_len,*a.shape[1:]),dtype=a.dtype,device=a.device)
+            a = torch.cat([a,pad], dim=0)
         padded.append(a)
     return padded

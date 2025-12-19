@@ -31,6 +31,9 @@ doppler_names = {
     'TRVMAX':['DOPPLER_A4C_TV_CW','DOPPLER_PSAX_Great_vessel_level_TV_CW']
 }
 
+### Scaling factor for LAV
+scale = 800/112*600/112*600/112
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--path',required=True,type=str,help='Path to directory of study with DICOM files')
 parser.add_argument('--guideline_year',required=True,type=int,help='Please indicate which year of ASE guideline to follow - 2016 vs 2025')
@@ -67,29 +70,37 @@ else:
     image_dataset = {}
     video_dataset = {}
     bsa = 0.
+    original_dims = {}
     for f in files:
         dcm_path = Path(path/f)
         if bsa ==0:
             bsa = dicom_utils.get_bsa(dcm_path)
         pixels = dicom_utils.change_dicom_color(dcm_path)
         if len(pixels.shape)==4 and pixels.shape[0]>=32: 
-            x = dicom_utils.convert_video_dicom(pixels)
+            x,h0,w0 = dicom_utils.convert_video_dicom(pixels)
             x_random_frame = dicom_utils.pull_random_frame(x)
-            video_dataset[f] = x
             image_dataset[f] = x_random_frame
+            video_dataset[f] = x
+            # for i in range(0,x.shape[0]):
+            #     image_dataset[f'{i}_{f}'] = x_random_frame
         else:
             x = dicom_utils.convert_image_dicom(pixels)
+            if x is None:
+                continue
             image_dataset[f] = x
-        dataset[f] = x
-
+        # dataset[f] = x
     '''
         View Classification
     '''
-    print(f'Classifying views for {len(dataset)} files')
+    print(f'Classifying views for {len(image_dataset)} files')
     view_input = torch.stack(list(image_dataset.values()))
+    filename = list(image_dataset.keys()) # Names of files
     view_model = model_utils.load_view_106_model()
-    filename = list(dataset.keys()) # Names of files
+    ### Old view classifier
+    # view_model = model_utils.load_view_classifier()
     predicted_view = model_utils.view_106_inference(view_input,view_model,filename)
+    ### Old view classifier
+    # predicted_view = model_utils.view_inference(view_input,view_model,filename)
     view_df = pd.DataFrame({'filename':list(predicted_view.keys()),'predicted_view':list(predicted_view.values())})
     ### Save predicted views
     if save_flag:
@@ -99,7 +110,7 @@ else:
     print('Extracting views for diastology')
     to_remove = view_df[~view_df.predicted_view.isin(diastology_views)].filename
     for f in to_remove:
-        dataset.pop(f)
+        # dataset.pop(f)
         image_dataset.pop(f)
         if f in video_dataset:
             video_dataset.pop(f)
@@ -130,6 +141,8 @@ else:
         video_quality_df = pd.DataFrame({'filename':list(predicted_video_quality.keys()),
                                      'pred_quality':list(predicted_video_quality.values())
                                      })
+        ### Remove the files that are a single frame pulled from video input
+        image_quality_df = image_quality_df[~image_quality_df.filename.isin(video_quality_df.filename)]
         quality_df = pd.concat([image_quality_df,video_quality_df])
     else:
         quality_df = image_quality_df
@@ -155,7 +168,11 @@ else:
     lvef = []
     if len(a4c)>0:
         for filename in a4c.filename:
-            a4c_tensor = dataset[filename]
+            if filename in list(video_dataset.keys()):
+                a4c_tensor = video_dataset[filename]
+            else: 
+                print(f'{filename} is not a video. Cannot calculate LVEF')
+                continue
             ef_model,ef_checkpoint = model_utils.ef_regressor()
             ef = model_utils.predict_lvef(a4c_tensor,ef_model,ef_checkpoint)
             lvef.append((ef,filename))
@@ -180,7 +197,7 @@ else:
         left_atrial_volume = {}
         for filename in a4c.filename:
             try:
-                a4c_tensor = dataset[filename]
+                a4c_tensor = video_dataset[filename]
                 mask,area = model_utils.la_seg_inf(la_model,a4c_tensor)
                 lav = model_utils.calc_lav_from_a4c(mask,area)
                 left_atrial_volume[filename] = lav
@@ -190,6 +207,7 @@ else:
         # lav = np.max(left_atrial_volume)
         a4c_key = max(list(left_atrial_volume.keys()))
         lav = left_atrial_volume[a4c_key]
+        lav *= scale
         lavi = lav/bsa 
         df_lavi = pd.DataFrame({'filename':[a4c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})
     else: 
@@ -197,17 +215,17 @@ else:
         a2c_areas = {} # key:value :: area : (np.array,float)
         for filename in a4c.filename:
             try:
-                a4c_tensor = dataset[filename]
+                a4c_tensor = video_dataset[filename]
                 a4c_mask,a4c_area = model_utils.la_seg_inf(la_model,a4c_tensor)
-                a4c_areas[np.max(a4c_area)] = (a4c_mask,a4c_area)
+                a4c_areas[np.max(a4c_area)] = (a4c_mask,a4c_area,str(filename))
             except:
                 print(f'\tCould not calculate LAV from {filename}')
                 continue
         for filename in a2c.filename:
             try:
-                a2c_tensor = dataset[filename]
+                a2c_tensor = video_dataset[filename]
                 a2c_mask,a2c_area = model_utils.la_seg_inf(la_model,a2c_tensor)
-                a2c_areas[np.max(a2c_area)] = (a2c_mask,a2c_area)
+                a2c_areas[np.max(a2c_area)] = (a2c_mask,a2c_area,str(filename))
             except:
                 print(f'\tCould not calculate LAV from {filename}')
                 continue
@@ -217,30 +235,35 @@ else:
         if len(a2c_areas)>0:
             a2c_key = max(list(a2c_areas.keys()))
             a2c_mask_area = a2c_areas[a2c_key]
-            lav = model_utils.calc_lav_biplane(a4c_mask_area[0],a4c_mask_area[1],a2c_mask_area[0],a2c_mask_area[1])
-            lavi = lav/bsa 
-            df_lavi = pd.DataFrame({'filename':[a4c_key,a2c_key],'LAVi':[lavi,lavi],'LAV':[lav,lav],'BSA':[bsa,bsa]})
             try:
                 lav = model_utils.calc_lav_biplane(a4c_mask_area[0],a4c_mask_area[1],a2c_mask_area[0],a2c_mask_area[1])
+                lav *= scale
                 lavi = lav/bsa 
-                df_lavi = pd.DataFrame({'filename':[a4c_key,a2c_key],'LAVi':[lavi,lavi],'LAV':[lav,lav],'BSA':[bsa,bsa]})
+                df_lavi = pd.DataFrame({'filename':[a4c_mask_area[-1],a2c_mask_area[-1]],'LAVi':[lavi,lavi],'LAV':[lav,lav],'BSA':[bsa,bsa],
+                                        })
             except:
                 ### Biplane not possible - try LAV from A4C only next
                 try: 
                     lav = model_utils.calc_lav_from_a4c(a4c_mask_area[0],a4c_mask_area[1])
+                    lav *= scale
                     lavi = lav/bsa
-                    df_lavi = pd.DataFrame({'filename':[a4c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})
+                    h0_a4c = original_dims[a4c_mask_area[-1]][0]
+                    w0_a4c = original_dims[a4c_mask_area[-1]][1]
+                    df_lavi = pd.DataFrame({'filename':[a4c_mask_area[-1]],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa],'h0':[h0_a4c],'w0':[w0_a4c]})
                 ### Both LA from biplane and A4C fail
                 except:
                     lav = 0.
                     lavi = 0
                     print('Biplane left atrial volume could not be calculated')
-                    df_lavi = pd.DataFrame({'filename':[''],'LAVi':[0],'LAV':[0],'BSA':[bsa]})
+                    df_lavi = pd.DataFrame({'filename':[''],'LAVi':[0],'LAV':[0],'BSA':[bsa]})#,'h0':[0],'w0':[0]})
         ### A2C cannot be segmented, so use A4C only for LAVi instead of biplane measurement
         else: 
             lav = model_utils.calc_lav_from_a4c(a4c_mask_area[0],a4c_mask_area[1])
+            lav *= scale
             lavi = lav/bsa
-            df_lavi = pd.DataFrame({'filename':[a4c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})
+            h0_a4c = original_dims[a4c_mask_area[-1]][0]
+            w0_a4c = original_dims[a4c_mask_area[-1]][1]
+            df_lavi = pd.DataFrame({'filename':[a4c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})#,'h0':[h0_a4c],'w0':[w0_a4c]})
 
     
     '''
@@ -259,7 +282,7 @@ else:
             ### Account for missing studies 
             doppler_filler = pd.DataFrame([0],columns=[m_name])
             doppler.append(doppler_filler)
-            print(f'No views to measure {m_name[i]} were found')
+            print(f'No views to measure {m_name} were found')
             continue
         #### Perform inference
         for f in m_name_view.filename:
@@ -269,7 +292,7 @@ else:
             save_dir = Path(save_path/f'{m_name}_results')
             ### Save Doppler echo with predicted annotation
             if save_flag:
-                if not save_dir.exists():
+                if not os.path.exists(save_dir):
                     os.mkdir(save_dir)
                 dicom_utils.plot_results(m_name,dcm_path,peak_velocity,pred_x,pred_y,save_dir)
         velocities = pd.DataFrame(velocities,columns=['filename',m_name,'pred_x','pred_y'])
@@ -278,7 +301,7 @@ else:
     eovera = diastology[diastology.predicted_view=='DOPPLER_A4C_MV_PW']
     if len(eovera)==0: # Account for missing views
         print('No A4C PW Doppler of mitral valve to measure mitral E and A velocities were found')
-        ea_vel = pd.DataFrame({'filename':'','eovera':0,'evel':0,'avel':0})
+        ea_vel = pd.DataFrame({'filename':[''],'MV_E_over_A':[0],'MV_E':[0],'MV_A':[0]})
     else:
         eovera['m_name'] = 'MVPEAKBOTH'
         ea_vel = []
@@ -289,7 +312,7 @@ else:
             save_dir = Path(save_path/'mvEoverA_results')
             ### Save Doppler echo with predicted annotation
             if save_flag:
-                if not save_dir.exists():
+                if not os.path.exists(save_dir):
                     os.mkdir(save_dir)
                 dicom_utils.plot_results('MV E/A',dcm_path,Inference_EperA,point_x1,point_y1+y0,save_dir,point_x2,point_y2+y0)
         ea_vel = pd.DataFrame(ea_vel,columns=['filename','MV_E_over_A','MV_E','MV_A','y0','x1','x2','y1','y2'])
@@ -299,8 +322,12 @@ else:
     '''    
     print(f'Grading diastology by {ase_year} ASE Guidelines')
     parameters = pd.merge(diastology,lvef[['filename','LVEF']],on='filename',how='outer')
-    parameters = pd.merge(parameters,doppler_measurements[['filename','MEDEVEL','LATEVEL','TRVMAX']],on='filename',how='outer')
-    parameters = pd.merge(parameters,ea_vel[['filename','MV_E_over_A','MV_E','MV_A']],on='filename',how='outer')
+    if 'filename' not in doppler_measurements.columns:
+        doppler_measurements['filename'] = ''*len(doppler_measurements)
+    # parameters = pd.merge(parameters,doppler_measurements[['filename','MEDEVEL','LATEVEL','TRVMAX']],on='filename',how='outer')
+    parameters = pd.concat([parameters,doppler_measurements])
+    # parameters = pd.merge(parameters,ea_vel[['filename','MV_E_over_A','MV_E','MV_A']],on='filename',how='outer')
+    parameters = pd.concat([parameters,ea_vel[['filename','MV_E_over_A','MV_E','MV_A']]])
     parameters = pd.concat([parameters,df_lavi])#,on='filename',how='outer')
     try:
         lvef = np.mean(parameters.LVEF)
@@ -309,13 +336,17 @@ else:
         print('LVEF was not calculated. Diastology for 2016 cannot be graded')
     print('LAVi:\t\t\t%0.2f' % lavi)
     try:
-        medevel = np.mean(parameters['MEDEVEL'])
-        print("Medial e' velocity:\t%0.2f" % medevel)
+        medevel = np.mean(parameters['MEDEVEL']) 
+        if medevel==0:
+            medevel = 100.
+        print("Medial e' velocity:\t%0.2f (100 for missing)" % medevel)
     except:
         print("Medial e' velocity was not measured")
     try:
         latevel = np.mean(parameters['LATEVEL'])
-        print("Lateral e' velocity:\t%0.2f" % latevel)
+        if latevel==0:
+            latevel = 100.
+        print("Lateral e' velocity:\t%0.2f (100 for missing)" % latevel)
     except:
         print("Lateral e' velocity was not measured")
     try:
@@ -332,9 +363,8 @@ else:
     except:
         mvE = 0.
         mvE_eprime = 0.
-        print('MV E velocity was not calculated')
+        print("MV E/e' velocity was not calculated")
     parameters['E_eprime'] = mvE_eprime
-
     try:
         mvEoverA = np.mean(parameters['MV_E_over_A'])
         print("MV E/A:\t\t\t%0.2f" % mvEoverA)
@@ -354,8 +384,32 @@ else:
 
     diastolic_grade = ase_guidelines.map_grade_to_text[grade]
     print(f'Found {diastolic_grade}.')
-    parameters['diastology_grade'] = diastolic_grade
-    parameters['numeric_diastology_grade'] = grade
     save_diastology_path = save_path/'diastology.csv'
-    if save_flag:
-        parameters.to_csv(save_diastology_path,index=None)
+    parameters.to_csv(save_diastology_path,index=None)
+    files = parameters[parameters.filename.notna()].filename.unique()
+    files = [str(f) for f in files]
+    pred_views = parameters[parameters.predicted_view.notna()].predicted_view.unique()
+    study_level = pd.DataFrame(
+        {
+            'LVEF':lvef,
+            'LAV':lav,
+            'LAVi':lavi,
+            'TRVmax':trvmax,
+            'MEDEVEL':medevel,
+            'LATEVEL':latevel,
+            'MV_E':mvE,
+            'MV_A':np.mean(parameters['MV_A']),
+            'MV_E_eprime':mvE_eprime,
+            'MV_E_over_A':mvEoverA,
+            'diastology_grade':diastolic_grade,
+            'numeric_diastology_grade':grade,
+            'views':';'.join(pred_views),
+            'files':';'.join(files)
+        },index=[0]
+    )
+    study_level.to_csv(save_path/'study_level_diastology.csv',index=None)
+
+    # parameters['diastology_grade'] = diastolic_grade
+    # parameters['numeric_diastology_grade'] = grade
+    # if save_flag:
+    #     parameters.to_csv(save_diastology_path,index=None)

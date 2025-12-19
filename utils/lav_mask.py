@@ -4,6 +4,7 @@ from scipy.interpolate import splev, splprep
 from skimage import filters,measure
 from skimage.restoration import denoise_bilateral
 from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
 
 H_PIX = 0.038512102720240304
 W_PIX = 0.038512102720240304
@@ -102,6 +103,8 @@ def calc_mod_volume(h,a4c_axes,a2c_axes=None):
         volume = np.pi/4.*sum([a[0]*a[1]*h_cm for a in biplane_axes])
     else: 
         volume = sum([np.pi*(a/2.)**2*h_cm for a in a4c_axes_cm])
+    # scale = 800/112*600/112*600/112
+    # print('Scaled:\t',volume*scale)
     return volume
 
 ### --- HELPER FUNCTIONS FOR LA SEGMENTATION --- ###
