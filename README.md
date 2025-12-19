@@ -25,7 +25,7 @@ This repository presents a workflow of 8 different EchoNet deep learning models 
 ## How to Use
 1. Download this repo
 
-2. Download weights for:
+2. Download weights for each of the models and place them into one directory. The directory containing the weights should be named "weights" and be located at the same level as the diastology repo, consistent with the file sturcture outline below). 
    - View classification - https://github.com/echonet/EchoPrime/releases/download/v1.0.0/model_data.zip
    - Quality control
    - LVEF - https://github.com/echonet/dynamic/releases/tag/v1.0.0
@@ -33,10 +33,37 @@ This repository presents a workflow of 8 different EchoNet deep learning models 
    - Lateral e' velocity - https://github.com/echonet/measurements/blob/main/weights/Doppler_models/latevel_weights.ckpt
    - TR Vmax - https://github.com/echonet/measurements/blob/main/weights/Doppler_models/trvmax_weights.ckpt
    - Mitral E/A - https://github.com/echonet/measurements/blob/main/weights/Doppler_models/mvpeak_2c_weights.ckpt
-
+   
 3. Add the paths to the weights in utils/model_utils.py
+   ```
+   diastology/
+   ├── README.md
+   ├── utils/
+   │   ├── __init__.py
+   │   ├── ase_guidelines.py
+   |   ├── constants.py
+   |   ├── dicom_utils.py
+   |   ├── lav_mask.py
+   |   ├── model_utils.py  
+   ├── main.py
+   └── .gitignore
 
-4. Run inference to analyze diastology
+   weights/
+   ├── view_classifier.pt
+   ├── image_quality_classifier.pt
+   ├── video_quality_classifier.pt
+   ├── view_classifier.pt
+   ├── lvef_weights.pt
+   ├── lav_weights.pt
+   ├── medevel_weights.ckpt
+   ├── latevel_weights.ckpt
+   ├── mvpeak_2c_weights.ckpt
+   ├── trvmax_weights.ckpt
+   ├── medevel_weights.ckpt
+   └── .gitignore
+   ```
+
+6. Run inference to analyze diastology
    ```
    python main.py --path <path to echo study> --quality_threshold <minimum echo quality> --to_save <flag to save results> --save_path <directory where results will be saved>
    ```
