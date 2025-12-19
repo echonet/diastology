@@ -66,29 +66,28 @@ else:
         Pre-process DICOM into tensors
     '''
     files = [f for f in path.iterdir() if f.is_file()]
-    dataset = {}
     image_dataset = {}
     video_dataset = {}
     bsa = 0.
     original_dims = {}
     for f in files:
         dcm_path = Path(path/f)
+        print(dcm_path.name)
         if bsa ==0:
             bsa = dicom_utils.get_bsa(dcm_path)
         pixels = dicom_utils.change_dicom_color(dcm_path)
         if len(pixels.shape)==4 and pixels.shape[0]>=32: 
             x,h0,w0 = dicom_utils.convert_video_dicom(pixels)
-            x_random_frame = dicom_utils.pull_random_frame(x)
-            image_dataset[f] = x_random_frame
+            # x_random_frame = dicom_utils.pull_random_frame(x)
+            x_first_frame = dicom_utils.pull_first_frame(x)
+            image_dataset[f] = x_first_frame
             video_dataset[f] = x
-            # for i in range(0,x.shape[0]):
-            #     image_dataset[f'{i}_{f}'] = x_random_frame
         else:
             x = dicom_utils.convert_image_dicom(pixels)
             if x is None:
+                print('incompatible file:\t',dcm_path.name,'\n')
                 continue
             image_dataset[f] = x
-        # dataset[f] = x
     '''
         View Classification
     '''
@@ -132,6 +131,7 @@ else:
     image_quality_df = pd.DataFrame({'filename':list(predicted_image_quality.keys()),
                                     'pred_quality':list(predicted_image_quality.values())
                                     })
+    image_quality_model.to("cpu")
     if len(list(video_dataset.values())) > 0:
         max_frames = max([v.shape[0] for v in list(video_dataset.values())])
         videos = model_utils.pad(list(video_dataset.values()),max_frames)
@@ -141,6 +141,7 @@ else:
         video_quality_df = pd.DataFrame({'filename':list(predicted_video_quality.keys()),
                                      'pred_quality':list(predicted_video_quality.values())
                                      })
+        video_quality_model.to("cpu")
         ### Remove the files that are a single frame pulled from video input
         image_quality_df = image_quality_df[~image_quality_df.filename.isin(video_quality_df.filename)]
         quality_df = pd.concat([image_quality_df,video_quality_df])
@@ -180,7 +181,7 @@ else:
     else:
         print('\tNo A4C found. Cannot calculate LVEF')
         lvef = pd.DataFrame({'LVEF':[0],'filename':['']})
-
+    ef_model.to("cpu")
     '''
         Left Atrial Volume Calculation
     '''
@@ -264,7 +265,7 @@ else:
             h0_a4c = original_dims[a4c_mask_area[-1]][0]
             w0_a4c = original_dims[a4c_mask_area[-1]][1]
             df_lavi = pd.DataFrame({'filename':[a4c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})#,'h0':[h0_a4c],'w0':[w0_a4c]})
-
+    la_model.to("cpu")
     
     '''
         Doppler Measurements
@@ -308,10 +309,14 @@ else:
         for f in eovera.filename:
             dcm_path = Path(path/f)
             eovera_image,y0,point_x1,point_x2,point_y1,point_y2,Inference_A_Vel,Inference_E_Vel,Inference_EperA = model_utils.eovera_inference(dcm_path)
+            if (point_x1,point_x2,point_y1,point_y2) == (0,0,0,0):
+                Inference_A_Vel = 0. 
+                Inference_E_Vel = 0.
+                Infernece_EperA = 0.
             ea_vel.append((f,Inference_EperA,Inference_E_Vel,Inference_A_Vel,y0,point_x1,point_x2,point_y1,point_y2))
             save_dir = Path(save_path/'mvEoverA_results')
             ### Save Doppler echo with predicted annotation
-            if save_flag:
+            if save_flag and (point_x1,point_x2,point_y1,point_y2) != (0,0,0,0):
                 if not os.path.exists(save_dir):
                     os.mkdir(save_dir)
                 dicom_utils.plot_results('MV E/A',dcm_path,Inference_EperA,point_x1,point_y1+y0,save_dir,point_x2,point_y2+y0)
@@ -408,8 +413,3 @@ else:
         },index=[0]
     )
     study_level.to_csv(save_path/'study_level_diastology.csv',index=None)
-
-    # parameters['diastology_grade'] = diastolic_grade
-    # parameters['numeric_diastology_grade'] = grade
-    # if save_flag:
-    #     parameters.to_csv(save_diastology_path,index=None)

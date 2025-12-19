@@ -1,0 +1,14 @@
+matplotlib==3.8.2
+numpy==1.24.4
+opencv==4.7.0
+opencv_python_headless==4.5.5.64
+pandas==2.3.3
+Pillow==12.0.0
+pydicom==2.3.1
+pytorch_lightning==2.2.0.post0
+scikit_learn==1.2.0
+scipy==1.16.3
+skimage==0.0
+torch==2.2.0a0+81ea7a4
+torchvision==0.17.0a0
+tqdm==4.66.1

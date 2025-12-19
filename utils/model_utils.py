@@ -226,8 +226,7 @@ CLASS_LIST = ['BMode_A2C',
  'M_mode_SC_IVC',
  'TDI_MV_Lateral e',
  'TDI_MV_Medial e',
- 'TDI_TV_Lateral S', 'NON_ULTRASOUND'] # Same list as used during training
-OUTPUT_NAMES = CLASS_LIST + ["annotation"]
+ 'TDI_TV_Lateral S','NON_ULTRASOUND'] 
 
 
 '''
@@ -303,7 +302,6 @@ def calc_lav_from_a4c(mask,area):
 
 def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
     ### Segment LA from A4C 
-    # a4c_mask,a4c_area = la_seg_inf(model,a4c)
     a4c_area = lav_mask.filter_areas(a4c_area)
     a4c_mask = a4c_mask[np.argmax(a4c_area)]
     ### Get geometric features of A4C LA mask
@@ -312,9 +310,7 @@ def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
     h,length,a4c_axes,a4c_endpts = lav_mask.find_axes(a4c_contour,a4c_mmitral,a4c_mperpend,a4c_mp,a4c_end)
 
     ### Segment LA from A2C
-    # a2c_mask,a2c_area = la_seg_inf(model,a2c)
     a2c_area = lav_mask.filter_areas(a2c_area)
-    # print(max(a2c_area),max(a4c_area))
     mask_a2c = a2c_mask[np.argmax(a2c_area)]
     a2c_contour,a2c_mmitral,a2c_mlength,a2c_mp,a2c_length,a2c_h = lav_mask.get_la_vals(mask_a2c)
     a2c_mperpend,a2c_bperpend,a2c_end = lav_mask.find_perpendicular(a2c_contour,a2c_mmitral,a2c_mp)
@@ -346,7 +342,6 @@ def load_view_classifier(device=torch.device("cuda:1"),weights_path=weights_dir/
 def view_inference(view_input,view_classifier,filename,device=torch.device("cuda:1"),batch_size=512):
     view_labels = torch.zeros(len(view_input))
     view_ds = torch.utils.data.TensorDataset(view_input,view_labels)
-    batch_size = 512
     view_loader = torch.utils.data.DataLoader(
         view_ds,batch_size=batch_size,
         num_workers=0,shuffle=False
@@ -535,7 +530,8 @@ def eovera_forward_pass(backbone,inputs):
     try:
         min_distance_coord  = min(distance_centroid_btw_maxlogits, key=distance_centroid_btw_maxlogits.get)
     except:
-        ValueError("Error: min_distance_coord is not found, due to low prediction score. Select Good quality MVPeak Doppler data")
+        print("Error: min_distance_coord is not found, due to low prediction score. Select Good quality MVPeak Doppler data")
+        return 0,0,0,0
     
     #3. Calculate distance between min_distance_coord and other centroids
     distance_btw_centroids = {}
@@ -583,6 +579,9 @@ def eovera_inference(dicom_path):
     ds = pydicom.dcmread(dicom_path)
     input_image = change_dicom_color(dicom_path)
     x0,x1,y0,y1,conversion_factor = get_doppler_region(ds)
+    if (x0,x1,y0,y1,conversion_factor) == (-1,-1,-1,-1,-1):
+        print(f'MV E/A was not calculated')
+        return [],-1,0,0,0,0,0,0,0 
     #horizontal line means the line where the Doppler signal starts
     horizontal_y = find_horizontal_line(ds.pixel_array[y0:y1, :])
     #Basically, the region where the Doppler signal starts is 342-345. We truncate the image from 342 to 768. Make 426*1024.

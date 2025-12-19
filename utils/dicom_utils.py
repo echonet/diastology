@@ -10,6 +10,7 @@ from utils.constants import *
 import matplotlib.pyplot as plt
 from pathlib import Path
 import random
+random.seed(17)
 
 '''
 Preprocess DICOM files
@@ -153,7 +154,8 @@ def get_doppler_region(ds):
     if REGION_X1_SUBTAG in doppler_region: 
         x1 = doppler_region[REGION_X1_SUBTAG].value
     if y0 <340 or y0 > 350:
-        raise ValueError("Error: Doppler Region is not located in the correct position. Please check the DICOM file. Our developed model is trained with y0 Doppler Region located in 342-348.")
+        print("Error: Doppler Region is not located in the correct position. Please check the DICOM file. Our developed model is trained with y0 Doppler Region located in 342-348.")
+        return -1,-1,-1,-1,-1
     return x0,x1,y0,y1,conversion_factor
 
 def find_horizontal_line(
