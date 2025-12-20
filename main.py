@@ -158,7 +158,10 @@ else:
     diastology = diastology[diastology.pred_quality>=quality_threshold]
     low_qual = quality_df[quality_df.pred_quality<quality_threshold].filename
     for file in low_qual:
-        dataset.pop(file)   
+        if file in list(video_dataset.keys()):
+            video_dataset.pop(file)
+        else:
+            image_dataset.pop(file) 
     print(f'Identified {len(diastology)} files with sufficient quality for diastology')
 
     '''
