@@ -69,23 +69,20 @@ else:
     image_dataset = {}
     video_dataset = {}
     bsa = 0.
-    original_dims = {}
     for f in files:
         dcm_path = Path(path/f)
-        print(dcm_path.name)
         if bsa ==0:
             bsa = dicom_utils.get_bsa(dcm_path)
         pixels = dicom_utils.change_dicom_color(dcm_path)
         if len(pixels.shape)==4 and pixels.shape[0]>=32: 
             x,h0,w0 = dicom_utils.convert_video_dicom(pixels)
-            # x_random_frame = dicom_utils.pull_random_frame(x)
             x_first_frame = dicom_utils.pull_first_frame(x)
             image_dataset[f] = x_first_frame
             video_dataset[f] = x
         else:
             x = dicom_utils.convert_image_dicom(pixels)
             if x is None:
-                print('incompatible file:\t',dcm_path.name,'\n')
+                print(f'Incompatible file:\t{dcm_path.name} with dimensions {pixels.shape}\n')
                 continue
             image_dataset[f] = x
     '''
@@ -95,11 +92,7 @@ else:
     view_input = torch.stack(list(image_dataset.values()))
     filename = list(image_dataset.keys()) # Names of files
     view_model = model_utils.load_view_106_model()
-    ### Old view classifier
-    # view_model = model_utils.load_view_classifier()
     predicted_view = model_utils.view_106_inference(view_input,view_model,filename)
-    ### Old view classifier
-    # predicted_view = model_utils.view_inference(view_input,view_model,filename)
     view_df = pd.DataFrame({'filename':list(predicted_view.keys()),'predicted_view':list(predicted_view.values())})
     ### Save predicted views
     if save_flag:
@@ -109,12 +102,11 @@ else:
     print('Extracting views for diastology')
     to_remove = view_df[~view_df.predicted_view.isin(diastology_views)].filename
     for f in to_remove:
-        # dataset.pop(f)
         image_dataset.pop(f)
         if f in video_dataset:
             video_dataset.pop(f)
     view_df = view_df[view_df.predicted_view.isin(diastology_views)]
-    print('views:\n',view_df.predicted_view.unique())
+    print('Found the following views for diastology:\n',view_df.predicted_view.unique())
 
     '''
         Quality Control for Images & Videos
@@ -158,7 +150,7 @@ else:
     diastology = diastology[diastology.pred_quality>=quality_threshold]
     low_qual = quality_df[quality_df.pred_quality<quality_threshold].filename
     for file in low_qual:
-        if file in list(video_dataset.keys()):
+        if file in video_dataset:
             video_dataset.pop(file)
         else:
             image_dataset.pop(file) 
@@ -251,23 +243,19 @@ else:
                     lav = model_utils.calc_lav_from_a4c(a4c_mask_area[0],a4c_mask_area[1])
                     lav *= scale
                     lavi = lav/bsa
-                    h0_a4c = original_dims[a4c_mask_area[-1]][0]
-                    w0_a4c = original_dims[a4c_mask_area[-1]][1]
-                    df_lavi = pd.DataFrame({'filename':[a4c_mask_area[-1]],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa],'h0':[h0_a4c],'w0':[w0_a4c]})
+                    df_lavi = pd.DataFrame({'filename':[a4c_mask_area[-1]],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})
                 ### Both LA from biplane and A4C fail
                 except:
                     lav = 0.
                     lavi = 0
                     print('Biplane left atrial volume could not be calculated')
-                    df_lavi = pd.DataFrame({'filename':[''],'LAVi':[0],'LAV':[0],'BSA':[bsa]})#,'h0':[0],'w0':[0]})
+                    df_lavi = pd.DataFrame({'filename':[''],'LAVi':[0],'LAV':[0],'BSA':[bsa]})
         ### A2C cannot be segmented, so use A4C only for LAVi instead of biplane measurement
         else: 
             lav = model_utils.calc_lav_from_a4c(a4c_mask_area[0],a4c_mask_area[1])
             lav *= scale
             lavi = lav/bsa
-            h0_a4c = original_dims[a4c_mask_area[-1]][0]
-            w0_a4c = original_dims[a4c_mask_area[-1]][1]
-            df_lavi = pd.DataFrame({'filename':[a4c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})#,'h0':[h0_a4c],'w0':[w0_a4c]})
+            df_lavi = pd.DataFrame({'filename':[a4c_key],'LAVi':[lavi],'LAV':[lav],'BSA':[bsa]})
     la_model.to("cpu")
     
     '''
@@ -292,10 +280,15 @@ else:
         for f in m_name_view.filename:
             dcm_path = Path(path/f)
             doppler_img,peak_velocity,pred_x,pred_y = model_utils.doppler_inference(dcm_path,m_parameter)
+            ### Doppler image has an incompatible format. Set measurements to default values
+            if peak_velocity == -1 and pred_x == -1 and pred_y == -1:
+                peak_velocity = 0
+                pred_x = 0 
+                pred_y = 0
             velocities.append((f,peak_velocity,pred_x,pred_y))
             save_dir = Path(save_path/f'{m_name}_results')
-            ### Save Doppler echo with predicted annotation
-            if save_flag:
+            ### Save Doppler echo with predicted annotation 
+            if save_flag and (peak_velocity,pred_x,pred_y) != (0,0,0):
                 if not os.path.exists(save_dir):
                     os.mkdir(save_dir)
                 dicom_utils.plot_results(m_name,dcm_path,peak_velocity,pred_x,pred_y,save_dir)
@@ -303,7 +296,8 @@ else:
         doppler.append(velocities[['filename',m_name]])
     doppler_measurements = pd.concat(doppler)
     eovera = diastology[diastology.predicted_view=='DOPPLER_A4C_MV_PW']
-    if len(eovera)==0: # Account for missing views
+    ### Account for missing views
+    if len(eovera)==0:
         print('No A4C PW Doppler of mitral valve to measure mitral E and A velocities were found')
         ea_vel = pd.DataFrame({'filename':[''],'MV_E_over_A':[0],'MV_E':[0],'MV_A':[0]})
     else:
@@ -332,11 +326,9 @@ else:
     parameters = pd.merge(diastology,lvef[['filename','LVEF']],on='filename',how='outer')
     if 'filename' not in doppler_measurements.columns:
         doppler_measurements['filename'] = ''*len(doppler_measurements)
-    # parameters = pd.merge(parameters,doppler_measurements[['filename','MEDEVEL','LATEVEL','TRVMAX']],on='filename',how='outer')
     parameters = pd.concat([parameters,doppler_measurements])
-    # parameters = pd.merge(parameters,ea_vel[['filename','MV_E_over_A','MV_E','MV_A']],on='filename',how='outer')
     parameters = pd.concat([parameters,ea_vel[['filename','MV_E_over_A','MV_E','MV_A']]])
-    parameters = pd.concat([parameters,df_lavi])#,on='filename',how='outer')
+    parameters = pd.concat([parameters,df_lavi])
     try:
         lvef = np.mean(parameters.LVEF)
         print('LVEF:\t\t\t%0.2f' % lvef)
@@ -363,6 +355,11 @@ else:
     except:
         trvmax = 0.
         print("TR Vmax was not calculated. Assuming normal value")
+    try: 
+        mvA = np.mean(parameters['MV_A'])
+        print(f"Mitral A velocity:\t{mvA:.2f}")
+    except: 
+        mvA = 0.
     try:
         mvE = np.mean(parameters['MV_E'])
         print("Mitral E velocity:\t%0.2f" % mvE)
@@ -371,7 +368,7 @@ else:
     except:
         mvE = 0.
         mvE_eprime = 0.
-        print("MV E/e' velocity was not calculated")
+        print("MV E/e' velocity was not calculated") 
     parameters['E_eprime'] = mvE_eprime
     try:
         mvEoverA = np.mean(parameters['MV_E_over_A'])
@@ -406,7 +403,7 @@ else:
             'MEDEVEL':medevel,
             'LATEVEL':latevel,
             'MV_E':mvE,
-            'MV_A':np.mean(parameters['MV_A']),
+            'MV_A':mvA,
             'MV_E_eprime':mvE_eprime,
             'MV_E_over_A':mvEoverA,
             'diastology_grade':diastolic_grade,

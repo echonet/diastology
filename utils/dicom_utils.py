@@ -38,7 +38,6 @@ def convert_image_dicom(pixel_array,n=224):
     try:
         image = Image.fromarray(pixel_array)
     except: 
-        print('Incompatible data type - ',pixel_array.shape)
         return 
     image = image.resize((n,n))
     image_tensor = torch.tensor(np.array(image),dtype=torch.float)
