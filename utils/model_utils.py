@@ -134,21 +134,21 @@ CLASS_LIST = ['BMode_A2C',
 '''
     EchoNet-Dynamic LVEF Model and Inference
 '''
-def ef_regressor(device=torch.device("cuda:1"),weights_path=weights_dir/'weights/lvef_weights.pt'):
+def ef_regressor(device=torch.device("cuda:0"),weights_path=weights_dir/'weights/lvef_weights.pt'):
     model = torchvision.models.video.__dict__["r2plus1d_18"](pretrained=True)
     model.fc = torch.nn.Linear(model.fc.in_features,1)
     if device.type=='cuda':
-        model = torch.nn.DataParallel(model,device_ids=[1])
+        model = torch.nn.DataParallel(model,device_ids=[0])
     model.to(device)
     checkpoint = torch.load(weights_path,map_location=device)
     model.load_state_dict(checkpoint['state_dict'])
     return model.eval(), checkpoint
 
-def predict_lvef(x,ef_model,ef_checkpoint,device=torch.device("cuda:1"),dims=(112,112)):
+def predict_lvef(x,ef_model,ef_checkpoint,device=torch.device("cuda:0"),dims=(112,112)):
     ### x is a 4D tensor of an echo
     mean = ef_checkpoint['mean'].reshape(3,1,1,1)
     std = ef_checkpoint['std'].reshape(3,1,1,1)
-    device = torch.device("cuda:1")
+    device = torch.device("cuda:0")
     x = x.permute(1,0,2,3) # Change from F,C,H,W to C,F,H,W
     x -= mean
     x /= std
@@ -162,20 +162,20 @@ def predict_lvef(x,ef_model,ef_checkpoint,device=torch.device("cuda:1"),dims=(11
 '''
     Left Atrial Segmentation Model and Inference
 '''
-def load_la_model(device=torch.device("cuda:1"),weights_path=weights_dir/'weights/lav_weights.pt'):
+def load_la_model(device=torch.device("cuda:0"),weights_path=weights_dir/'weights/lav_weights.pt'):
     model = torchvision.models.segmentation.__dict__['deeplabv3_resnet50']()
     model.classifier[-1] = torch.nn.Conv2d(
         model.classifier[-1].in_channels,
         1,
         kernel_size=model.classifier[-1].kernel_size,
     )
-    model = torch.nn.DataParallel(model,device_ids=[1])
+    model = torch.nn.DataParallel(model,device_ids=[0])
     model.to(device)
     checkpoint = torch.load(weights_path,map_location=device)
     model.load_state_dict(checkpoint['state_dict'])
     return model.eval()
 
-def la_seg_inf(model,x,device=torch.device("cuda:1"),n=112):
+def la_seg_inf(model,x,device=torch.device("cuda:0"),n=112):
     f,h,w,c = x.shape
     mean = GLOBAL_LA_MEAN.reshape(1,3,1,1)
     std = GLOBAL_LA_STD.reshape(1,3,1,1)
@@ -227,7 +227,7 @@ def calc_lav_biplane(a4c_mask,a4c_area,a2c_mask,a2c_area):
 '''
     View Classification Model and Inference
 '''
-def load_view_classifier(device=torch.device("cuda:1"),weights_path=weights_dir/'weights/view_classify.ckpt'):
+def load_view_classifier(device=torch.device("cuda:0"),weights_path=weights_dir/'weights/view_classify.ckpt'):
     vc_checkpoint = torch.load(weights_path,map_location='cpu')
     vc_state_dict={key[6:]:value for key,value in vc_checkpoint['state_dict'].items()}
     view_classifier = torchvision.models.convnext_base()
@@ -241,7 +241,7 @@ def load_view_classifier(device=torch.device("cuda:1"),weights_path=weights_dir/
         param.requires_grad = False
     return view_classifier.eval()
 
-def view_inference(view_input,view_classifier,filename,device=torch.device("cuda:1"),batch_size=512):
+def view_inference(view_input,view_classifier,filename,device=torch.device("cuda:0"),batch_size=512):
     view_labels = torch.zeros(len(view_input))
     view_ds = torch.utils.data.TensorDataset(view_input,view_labels)
     view_loader = torch.utils.data.DataLoader(
@@ -264,7 +264,7 @@ def view_inference(view_input,view_classifier,filename,device=torch.device("cuda
 '''
     106 View Classifier
 '''
-def load_view_106_model(device=torch.device('cuda:1'),weights_path=weights_dir/'weights/updated_view_classifer.pt'): 
+def load_view_106_model(device=torch.device('cuda:0'),weights_path=weights_dir/'weights/updated_view_classifer.pt'): 
     num_classes = len(CLASS_LIST)
     model = convnext_base(num_classes=num_classes+1)
     checkpoint = torch.load(weights_path,map_location="cpu")
@@ -273,7 +273,7 @@ def load_view_106_model(device=torch.device('cuda:1'),weights_path=weights_dir/'
     model.to(device)
     return model.eval() 
 
-def view_106_inference(dataset,model,filename,device=torch.device("cuda:1"),batch_size=64):
+def view_106_inference(dataset,model,filename,device=torch.device("cuda:0"),batch_size=64):
     view_labels = torch.zeros(len(dataset))
     view_ds = torch.utils.data.TensorDataset(dataset,view_labels)
     view_loader = torch.utils.data.DataLoader(
@@ -299,7 +299,7 @@ def view_106_inference(dataset,model,filename,device=torch.device("cuda:1"),batc
 '''
 def load_quality_classifier(input_type,
                             weights_path,
-                            device=torch.device('cuda:1')):
+                            device=torch.device('cuda:0')):
     weights = torch.load(weights_path,map_location=device)
     if input_type=='image':
         model = densenet121(num_classes=1)
@@ -311,7 +311,7 @@ def load_quality_classifier(input_type,
     model.to(device)
     return model.eval()
 
-def quality_inference(quality_input,quality_model,filename,device=torch.device("cuda:1"),batch_size=32):
+def quality_inference(quality_input,quality_model,filename,device=torch.device("cuda:0"),batch_size=32):
     quality_labels = torch.zeros(len(quality_input))
     quality_ds = torch.utils.data.TensorDataset(quality_input,quality_labels)
     quality_dl = torch.utils.data.DataLoader(quality_ds,batch_size=batch_size,num_workers=1,shuffle=False)
@@ -332,13 +332,13 @@ def quality_inference(quality_input,quality_model,filename,device=torch.device("
     EchoNet-Measurements Doppler Parameter Models and Inference 
 '''
 def load_doppler_model(parameter):
-    device = 'cuda:1'
+    device = 'cuda:0'
     weights_path = DOPPLER_WEIGHTS_DICT[parameter]
     if parameter == 'eovera':
         num_classes = 2 
     else: 
         num_classes = 1
-    weights = torch.load(weights_path,map_location='cuda:1')
+    weights = torch.load(weights_path,map_location='cuda:0')
     backbone = deeplabv3_resnet50(num_classes=num_classes)
     weights = {k.replace('m.',''):v for k,v in weights.items()}
     backbone.load_state_dict(weights)
@@ -346,7 +346,7 @@ def load_doppler_model(parameter):
     return backbone 
 
 ### Runs inference using weights from models for medial e', lateral e', or TR Vmax 
-def doppler_inference(dicom_path,parameter,device=torch.device('cuda:1')):
+def doppler_inference(dicom_path,parameter,device=torch.device('cuda:0')):
     ds = pydicom.dcmread(dicom_path)
     input_image = change_dicom_color(dicom_path) #ds.pixel_array
     x0,x1,y0,y1,conversion_factor = get_doppler_region(ds)
@@ -358,7 +358,7 @@ def doppler_inference(dicom_path,parameter,device=torch.device('cuda:1')):
     doppler_area_tensor = torch.tensor(input_dicom_doppler_area)
     doppler_area_tensor = doppler_area_tensor.permute(2, 0, 1).unsqueeze(0)
     doppler_area_tensor = doppler_area_tensor.float() / 255.0
-    doppler_area_tensor = doppler_area_tensor.to('cuda:1')
+    doppler_area_tensor = doppler_area_tensor.to('cuda:0')
     backbone = load_doppler_model(parameter=parameter)
     backbone = backbone.to(device)
     param = next(iter(backbone.parameters()))
@@ -479,7 +479,7 @@ def eovera_forward_pass(backbone,inputs):
     return point_x1, point_y1, point_x2, point_y2
 
 def eovera_inference(dicom_path):
-    device = 'cuda:1'
+    device = 'cuda:0'
     ds = pydicom.dcmread(dicom_path)
     input_image = change_dicom_color(dicom_path)
     x0,x1,y0,y1,conversion_factor = get_doppler_region(ds)

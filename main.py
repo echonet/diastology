@@ -74,11 +74,14 @@ else:
         if bsa ==0:
             bsa = dicom_utils.get_bsa(dcm_path)
         pixels = dicom_utils.change_dicom_color(dcm_path)
-        if len(pixels.shape)==4 and pixels.shape[0]>=32: 
-            x,h0,w0 = dicom_utils.convert_video_dicom(pixels)
-            x_first_frame = dicom_utils.pull_first_frame(x)
-            image_dataset[f] = x_first_frame
-            video_dataset[f] = x
+        if len(pixels.shape)==4: 
+            if pixels.shape[0]>=32: 
+                x,h0,w0 = dicom_utils.convert_video_dicom(pixels)
+                x_first_frame = dicom_utils.pull_first_frame(x)
+                image_dataset[f] = x_first_frame
+                video_dataset[f] = x
+            else: 
+                print(f'Video has too few frames:\t{dcm_path.name}, {pixels.shape[0]}\n')
         else:
             x = dicom_utils.convert_image_dicom(pixels)
             if x is None:
